@@ -429,9 +429,22 @@ class Renderer {
         // Create indicators for each valid move
         for (const hex of this.gameState.validMoves) {
             const position = this.hexToPosition(hex);
+            let geometry;
+            let isDiscAction = false;
             
-            // Create indicator geometry
-            const geometry = new THREE.CylinderGeometry(this.hexSize * 1, this.hexSize * 1, 0.05, 6);
+            // Check if the action is related to discs
+            if (this.gameState.selectedAction === 'placeDisc' || 
+                (this.gameState.selectedAction === 'movePiece' && 
+                 this.gameState.selectedHex && 
+                 this.gameState.grid.getCell(this.gameState.selectedHex)?.piece?.type === 'disc')) {
+                // Create a disc-shaped indicator
+                geometry = new THREE.CylinderGeometry(this.hexSize * 0.4, this.hexSize * 0.4, 0.25, 32);
+                isDiscAction = true;
+            } else {
+                // Use the original hexagonal indicator for other actions
+                geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
+            }
+            
             const material = new THREE.MeshBasicMaterial({
                 color: 0x00cc66,
                 transparent: true,
@@ -440,7 +453,14 @@ class Renderer {
             });
             
             const indicator = new THREE.Mesh(geometry, material);
-            indicator.position.set(position.x, this.hexHeight + 0.05, position.z);
+            
+            // Position the indicator higher for disc actions
+            if (isDiscAction) {
+                indicator.position.set(position.x, this.hexHeight + 0.05, position.z); // 0.125 higher than before
+            } else {
+                indicator.position.set(position.x, this.hexHeight - 0.075, position.z);
+            }
+            
             indicator.rotation.y = Math.PI / 3; // Align with tiles
             indicator.userData = { isValidMoveIndicator: true, hex };
             

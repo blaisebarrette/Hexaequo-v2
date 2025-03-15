@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexaequo - CORS Issue Help</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #0066cc;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0066cc;
+            margin-top: 30px;
+        }
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: monospace;
+        }
+        .note {
+            background-color: #fff8dc;
+            border-left: 4px solid #ffeb3b;
+            padding: 10px 15px;
+            margin: 20px 0;
+        }
+        .error {
+            background-color: #ffebee;
+            border-left: 4px solid #f44336;
+            padding: 10px 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hexaequo - CORS Issue Help</h1>
+    
+    <div class="error">
+        <h3>Error: Cross-Origin Resource Sharing (CORS) Issue</h3>
+        <p>You're seeing errors like:</p>
+        <pre>Cross origin requests are only supported for HTTP.
+XMLHttpRequest cannot load file:///path/to/model.glb due to access control checks.</pre>
+    </div>
+    
+    <h2>Why This Happens</h2>
+    <p>For security reasons, browsers restrict loading local files via JavaScript when using the <code>file://</code> protocol. This is a security feature to prevent malicious websites from accessing files on your computer.</p>
+    
+    <h2>How to Fix It</h2>
+    <p>To fix this issue, you need to serve your files through a web server instead of opening them directly from your file system. Here are a few simple ways to do this:</p>
+    
+    <h3>Option 1: Use Python's Built-in HTTP Server</h3>
+    <p>If you have Python installed (common on macOS and Linux):</p>
+    <pre>cd /path/to/Hexaequo/V2
+python -m SimpleHTTPServer 8000    # Python 2
+python3 -m http.server 8000        # Python 3</pre>
+    <p>Then open <a href="http://localhost:8000/Hexaequo/">http://localhost:8000/Hexaequo/</a> in your browser.</p>
+    
+    <h3>Option 2: Use the Node.js Server We Created</h3>
+    <p>If you have Node.js installed:</p>
+    <pre>cd /path/to/Hexaequo/V2/Hexaequo
+node server.js</pre>
+    <p>Then open <a href="http://localhost:8080/">http://localhost:8080/</a> in your browser.</p>
+    
+    <h3>Option 3: Use a Web Server Like Apache or Nginx</h3>
+    <p>If you have a web server installed, you can configure it to serve your Hexaequo directory.</p>
+    
+    <div class="note">
+        <h3>Note for Development</h3>
+        <p>During development, the simplest option is usually Python's HTTP server or the Node.js server we provided.</p>
+        <p>For production deployment, you should use a proper web server like Apache, Nginx, or a cloud hosting service.</p>
+    </div>
+    
+    <h2>Testing Your 3D Models</h2>
+    <p>Once you have a server running, you can test your 3D models by opening:</p>
+    <ul>
+        <li>The model test page: <code>http://localhost:PORT/test-models.html</code></li>
+        <li>The main game: <code>http://localhost:PORT/index.html</code></li>
+    </ul>
+    
+    <h2>Need More Help?</h2>
+    <p>If you're still having issues, check:</p>
+    <ul>
+        <li>That your 3D models are in the correct format (GLB)</li>
+        <li>That your 3D models are in the correct location (assets/models/)</li>
+        <li>That your 3D models have the correct names (tile_black.glb, etc.)</li>
+        <li>That your web server is running and accessible</li>
+    </ul>
+</body>
+</html> 

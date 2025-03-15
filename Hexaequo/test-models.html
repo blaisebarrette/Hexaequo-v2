@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexaequo Model Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        #model-selector {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        select, button {
+            padding: 5px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="info">
+        <h2>3D Model Test</h2>
+        <p>This page tests the loading of 3D models for the Hexaequo game.</p>
+        <p>Use the dropdown below to select different models.</p>
+        <p>Controls: Left-click and drag to rotate, scroll to zoom.</p>
+    </div>
+    <div id="loading">Loading models...</div>
+    <div id="model-selector">
+        <select id="model-select">
+            <option value="tile_black">Black Tile</option>
+            <option value="tile_white">White Tile</option>
+            <option value="disc_black">Black Disc</option>
+            <option value="disc_white">White Disc</option>
+            <option value="ring_black">Black Ring</option>
+            <option value="ring_white">White Ring</option>
+        </select>
+        <button id="show-model">Show Model</button>
+    </div>
+
+    <!-- Three.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <script>
+        // Main variables
+        let scene, camera, renderer, controls;
+        let currentModel = null;
+        const modelPaths = {
+            'tile_black': 'assets/models/tile_black.glb',
+            'tile_white': 'assets/models/tile_white.glb',
+            'disc_black': 'assets/models/disc_black.glb',
+            'disc_white': 'assets/models/disc_white.glb',
+            'ring_black': 'assets/models/ring_black.glb',
+            'ring_white': 'assets/models/ring_white.glb'
+        };
+        const loadedModels = {};
+        let loadingCount = 0;
+        
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 3);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Create controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 10, 7.5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            // Add a grid helper
+            const gridHelper = new THREE.GridHelper(10, 10);
+            scene.add(gridHelper);
+            
+            // Load all models
+            loadAllModels();
+            
+            // Add event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('show-model').addEventListener('click', showSelectedModel);
+            
+            // Start animation loop
+            animate();
+        }
+        
+        // Load all models
+        function loadAllModels() {
+            const loader = new THREE.GLTFLoader();
+            loadingCount = Object.keys(modelPaths).length;
+            
+            for (const [key, path] of Object.entries(modelPaths)) {
+                loader.load(
+                    path,
+                    (gltf) => {
+                        // Process the loaded model
+                        const model = gltf.scene;
+                        
+                        // Enable shadows
+                        model.traverse((node) => {
+                            if (node.isMesh) {
+                                node.castShadow = true;
+                                node.receiveShadow = true;
+                            }
+                        });
+                        
+                        // Store the model
+                        loadedModels[key] = model;
+                        
+                        // Update loading count
+                        loadingCount--;
+                        if (loadingCount === 0) {
+                            // All models loaded
+                            document.getElementById('loading').style.display = 'none';
+                            showSelectedModel();
+                        }
+                    },
+                    (xhr) => {
+                        // Loading progress
+                        const progress = Math.round((xhr.loaded / xhr.total) * 100);
+                        document.getElementById('loading').textContent = `Loading ${key}... ${progress}%`;
+                    },
+                    (error) => {
+                        console.error(`Error loading model ${key}:`, error);
+                        loadingCount--;
+                        if (loadingCount === 0) {
+                            document.getElementById('loading').textContent = 'Some models failed to load. Check console for details.';
+                        }
+                    }
+                );
+            }
+        }
+        
+        // Show the selected model
+        function showSelectedModel() {
+            const select = document.getElementById('model-select');
+            const modelKey = select.value;
+            
+            // Remove current model if exists
+            if (currentModel) {
+                scene.remove(currentModel);
+            }
+            
+            // Add the selected model
+            if (loadedModels[modelKey]) {
+                currentModel = loadedModels[modelKey].clone();
+                scene.add(currentModel);
+            } else {
+                console.warn(`Model ${modelKey} not loaded yet.`);
+            }
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html> 

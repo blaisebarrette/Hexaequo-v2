@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexaequo Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .test-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #444;
+        }
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-left: 4px solid #ccc;
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .success {
+            border-left-color: #4CAF50;
+        }
+        .error {
+            border-left-color: #F44336;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Hexaequo Test Suite</h1>
+        
+        <div class="test-section">
+            <h2>Module Loading Test</h2>
+            <button id="test-modules">Test Modules</button>
+            <div id="modules-result" class="test-result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>HexGrid Test</h2>
+            <button id="test-hexgrid">Test HexGrid</button>
+            <div id="hexgrid-result" class="test-result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>GameState Test</h2>
+            <button id="test-gamestate">Test GameState</button>
+            <div id="gamestate-result" class="test-result"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>GameRules Test</h2>
+            <button id="test-gamerules">Test GameRules</button>
+            <div id="gamerules-result" class="test-result"></div>
+        </div>
+    </div>
+    
+    <!-- Three.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <!-- Application scripts -->
+    <script src="js/core/HexGrid.js"></script>
+    <script src="js/core/GameState.js"></script>
+    <script src="js/core/GameRules.js"></script>
+    <script src="js/rendering/Renderer.js"></script>
+    <script src="js/rendering/ModelLoader.js"></script>
+    <script src="js/ui/UserInterface.js"></script>
+    <script src="js/ui/InputHandler.js"></script>
+    
+    <script>
+        // Test modules loading
+        document.getElementById('test-modules').addEventListener('click', function() {
+            const result = document.getElementById('modules-result');
+            try {
+                const modules = [
+                    { name: 'HexGrid', constructor: HexGrid },
+                    { name: 'GameState', constructor: GameState },
+                    { name: 'GameRules', constructor: GameRules },
+                    { name: 'Renderer', constructor: Renderer },
+                    { name: 'ModelLoader', constructor: ModelLoader },
+                    { name: 'UserInterface', constructor: UserInterface },
+                    { name: 'InputHandler', constructor: InputHandler }
+                ];
+                
+                let output = '';
+                modules.forEach(module => {
+                    if (typeof module.constructor === 'function') {
+                        output += `✅ ${module.name} loaded successfully\n`;
+                    } else {
+                        output += `❌ ${module.name} not loaded correctly\n`;
+                    }
+                });
+                
+                result.textContent = output;
+                result.classList.add('success');
+                result.classList.remove('error');
+            } catch (error) {
+                result.textContent = `Error testing modules: ${error.message}\n${error.stack}`;
+                result.classList.add('error');
+                result.classList.remove('success');
+            }
+        });
+        
+        // Test HexGrid
+        document.getElementById('test-hexgrid').addEventListener('click', function() {
+            const result = document.getElementById('hexgrid-result');
+            try {
+                const grid = new HexGrid(3);
+                const output = [
+                    `Grid size: ${grid.size}`,
+                    `Total cells: ${grid.cells.length}`,
+                    `Center cell: ${JSON.stringify(grid.getCell(0, 0, 0))}`
+                ].join('\n');
+                
+                result.textContent = output;
+                result.classList.add('success');
+                result.classList.remove('error');
+            } catch (error) {
+                result.textContent = `Error testing HexGrid: ${error.message}\n${error.stack}`;
+                result.classList.add('error');
+                result.classList.remove('success');
+            }
+        });
+        
+        // Test GameState
+        document.getElementById('test-gamestate').addEventListener('click', function() {
+            const result = document.getElementById('gamestate-result');
+            try {
+                const gameState = new GameState();
+                const output = [
+                    `Current player: ${gameState.currentPlayer}`,
+                    `Game phase: ${gameState.gamePhase}`,
+                    `Black tiles remaining: ${gameState.blackTilesRemaining}`,
+                    `White tiles remaining: ${gameState.whiteTilesRemaining}`,
+                    `Black discs remaining: ${gameState.blackDiscsRemaining}`,
+                    `White discs remaining: ${gameState.whiteDiscsRemaining}`,
+                    `Black rings remaining: ${gameState.blackRingsRemaining}`,
+                    `White rings remaining: ${gameState.whiteRingsRemaining}`
+                ].join('\n');
+                
+                result.textContent = output;
+                result.classList.add('success');
+                result.classList.remove('error');
+            } catch (error) {
+                result.textContent = `Error testing GameState: ${error.message}\n${error.stack}`;
+                result.classList.add('error');
+                result.classList.remove('success');
+            }
+        });
+        
+        // Test GameRules
+        document.getElementById('test-gamerules').addEventListener('click', function() {
+            const result = document.getElementById('gamerules-result');
+            try {
+                const gameState = new GameState();
+                const rules = new GameRules(gameState);
+                
+                // Place a tile at the center
+                gameState.placeTile(0, 0, 0, 'black');
+                
+                const validMoves = rules.getValidMoves();
+                const output = [
+                    `Game is over: ${rules.isGameOver()}`,
+                    `Winner: ${rules.getWinner() || 'None yet'}`,
+                    `Valid moves count: ${validMoves.length}`,
+                    `Sample valid move: ${validMoves.length > 0 ? JSON.stringify(validMoves[0]) : 'None'}`
+                ].join('\n');
+                
+                result.textContent = output;
+                result.classList.add('success');
+                result.classList.remove('error');
+            } catch (error) {
+                result.textContent = `Error testing GameRules: ${error.message}\n${error.stack}`;
+                result.classList.add('error');
+                result.classList.remove('success');
+            }
+        });
+    </script>
+</body>
+</html> 

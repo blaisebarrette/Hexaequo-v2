@@ -184,6 +184,9 @@ class Renderer {
         // Clear existing valid move indicators
         this.clearValidMoveIndicators();
         
+        // Clear selected hex indicator
+        this.clearSelectedHexIndicator();
+        
         // Update the board
         this.updateBoard();
         
@@ -340,6 +343,7 @@ class Renderer {
         if (this.modelLoader.isLoaded(`tile_${color}`)) {
             const model = this.modelLoader.getModel(`tile_${color}`).clone();
             model.userData = { isTile: true, color };
+            this.applyTextureScaling(model, 0.1); // Scale tile textures by 2x (making them smaller)
             return model;
         }
         
@@ -374,6 +378,7 @@ class Renderer {
         if (this.modelLoader.isLoaded(modelKey)) {
             const model = this.modelLoader.getModel(modelKey).clone();
             model.userData = { isPiece: true, type, color };
+            this.applyTextureScaling(model, 0.1); // Scale piece textures by 2x (making them smaller)
             return model;
         }
         
@@ -431,8 +436,9 @@ class Renderer {
             const position = this.hexToPosition(hex);
             let geometry;
             let isDiscAction = false;
+            let isRingAction = false;
             
-            // Check if the action is related to discs
+            // Check if the action is related to discs or rings
             if (this.gameState.selectedAction === 'placeDisc' || 
                 (this.gameState.selectedAction === 'movePiece' && 
                  this.gameState.selectedHex && 
@@ -440,6 +446,24 @@ class Renderer {
                 // Create a disc-shaped indicator
                 geometry = new THREE.CylinderGeometry(this.hexSize * 0.4, this.hexSize * 0.4, 0.25, 32);
                 isDiscAction = true;
+            } else if (this.gameState.selectedAction === 'placeRing' ||
+                     (this.gameState.selectedAction === 'movePiece' && 
+                      this.gameState.selectedHex && 
+                      this.gameState.grid.getCell(this.gameState.selectedHex)?.piece?.type === 'ring')) {
+                // Create a ring-shaped indicator
+                const outerRadius = this.hexSize * 0.6;
+                const innerRadius = this.hexSize * 0.4;
+                const shape = new THREE.Shape()
+                    .absarc(0, 0, outerRadius, 0, Math.PI * 2);
+                shape.holes.push(
+                    new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
+                );
+                const extrudeSettings = {
+                    depth: 0.25,
+                    bevelEnabled: false
+                };
+                geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                isRingAction = true;
             } else {
                 // Use the original hexagonal indicator for other actions
                 geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
@@ -448,20 +472,26 @@ class Renderer {
             const material = new THREE.MeshBasicMaterial({
                 color: 0x00cc66,
                 transparent: true,
-                opacity: 0.3,
+                opacity: 0.2,
                 side: THREE.DoubleSide
             });
             
             const indicator = new THREE.Mesh(geometry, material);
             
-            // Position the indicator higher for disc actions
-            if (isDiscAction) {
-                indicator.position.set(position.x, this.hexHeight + 0.05, position.z); // 0.125 higher than before
+            // Position the indicator based on the type
+            if (isDiscAction || isRingAction) {
+                indicator.position.set(position.x, this.hexHeight + (isRingAction ? 0.175 : 0.05), position.z);
+                if (isRingAction) {
+                    indicator.rotation.x = Math.PI / 2; // Lay the ring flat
+                }
             } else {
                 indicator.position.set(position.x, this.hexHeight - 0.075, position.z);
             }
             
-            indicator.rotation.y = Math.PI / 3; // Align with tiles
+            if (!isRingAction) {
+                indicator.rotation.y = Math.PI / 3; // Align with tiles (except for rings)
+            }
+            
             indicator.userData = { isValidMoveIndicator: true, hex };
             
             // Add to scene and track
@@ -804,6 +834,46 @@ class Renderer {
      */
     easeInOutQuad(t) {
         return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    /**
+     * Apply texture scaling to a 3D model
+     * @param {THREE.Object3D} model - The 3D model to scale textures for
+     * @param {number} scale - The scale factor for the textures (default: 1.0)
+     */
+    applyTextureScaling(model, scale = 1.0) {
+        model.traverse((node) => {
+            if (node.isMesh && node.material) {
+                const materials = Array.isArray(node.material) ? node.material : [node.material];
+                
+                materials.forEach(material => {
+                    const applyToTexture = (texture) => {
+                        if (texture) {
+                            texture.repeat.set(1/scale, 1/scale);
+                            texture.wrapS = THREE.RepeatWrapping;
+                            texture.wrapT = THREE.RepeatWrapping;
+                            texture.offset.set(0, 0);
+                            texture.center.set(0.5, 0.5);
+                            texture.minFilter = THREE.LinearMipMapLinearFilter;
+                            texture.magFilter = THREE.LinearFilter;
+                            texture.anisotropy = 16;
+                            texture.needsUpdate = true;
+                        }
+                    };
+
+                    // Apply to all texture types
+                    applyToTexture(material.map);
+                    applyToTexture(material.normalMap);
+                    applyToTexture(material.roughnessMap);
+                    applyToTexture(material.metalnessMap);
+                    applyToTexture(material.aoMap);
+                    applyToTexture(material.emissiveMap);
+
+                    // Ensure material updates
+                    material.needsUpdate = true;
+                });
+            }
+        });
     }
 }
 

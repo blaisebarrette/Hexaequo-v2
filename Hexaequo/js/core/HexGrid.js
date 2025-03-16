@@ -432,21 +432,28 @@ class HexGrid {
         const pieceColor = cell.piece.color;
         const validMoves = [];
         
-        // Rings move exactly two tiles away
-        // For each direction, check if there's a valid landing spot
-        HEX_DIRECTIONS.forEach(dir => {
-            const landingHex = hex.add(dir).add(dir);
-            const landingCell = this.getCell(landingHex);
-            
-            // Landing spot must be a tile
-            if (landingCell) {
-                // Can land on empty tile or capture opponent's piece
-                if (!landingCell.piece || 
-                    (landingCell.piece && landingCell.piece.color !== pieceColor)) {
-                    validMoves.push(landingHex);
+        // Check all hexes at distance 2
+        for (let dq = -2; dq <= 2; dq++) {
+            for (let dr = Math.max(-2, -dq-2); dr <= Math.min(2, -dq+2); dr++) {
+                const targetHex = new Hex(hex.q + dq, hex.r + dr);
+                
+                // Skip if it's not exactly distance 2
+                if (hex.distance(targetHex) !== 2) {
+                    continue;
+                }
+                
+                const targetCell = this.getCell(targetHex);
+                
+                // Landing spot must be a tile
+                if (targetCell) {
+                    // Can land on empty tile or capture opponent's piece
+                    if (!targetCell.piece || 
+                        (targetCell.piece && targetCell.piece.color !== pieceColor)) {
+                        validMoves.push(targetHex);
+                    }
                 }
             }
-        });
+        }
         
         return validMoves;
     }

@@ -60,7 +60,10 @@ class UserInterface {
             loadingIndicator: document.getElementById('loading-indicator'),
             
             // Game canvas
-            gameCanvas: document.getElementById('game-canvas')
+            gameCanvas: document.getElementById('game-canvas'),
+
+            // Game options
+            showValidMovesCheckbox: document.getElementById('show-valid-moves')
         };
         
         // Initialize the UI
@@ -112,6 +115,13 @@ class UserInterface {
         // Set up canvas event listeners
         this.elements.gameCanvas.addEventListener('mousemove', (e) => this.renderer.onMouseMove(e));
         this.elements.gameCanvas.addEventListener('click', (e) => this.onCanvasClick(e));
+        
+        // Set up show valid moves checkbox
+        this.elements.showValidMovesCheckbox?.addEventListener('change', () => {
+            if (this.gameState.selectedAction) {
+                this.renderer.showValidMoveIndicators();
+            }
+        });
         
         // Load game rules into the modal
         this.loadRules();
@@ -228,11 +238,16 @@ class UserInterface {
             this.gameState.selectedAction = null;
             this.gameState.selectedHex = null;
             this.gameState.validMoves = [];
-            this.renderer.clearSelectedHexIndicator();
+            this.renderer.clearValidMoveIndicators();
         } else {
             // Otherwise, select the action
             this.gameState.selectAction(action);
             this.renderer.clearSelectedHexIndicator();
+            
+            // Only show valid move indicators if the checkbox is checked
+            if (this.elements.showValidMovesCheckbox?.checked) {
+                this.renderer.showValidMoveIndicators();
+            }
         }
         
         // Update the UI
@@ -256,6 +271,11 @@ class UserInterface {
             
             // Process the hex selection in the game state
             this.gameState.selectHex(hex);
+            
+            // Show valid moves only if the checkbox is checked
+            if (this.elements.showValidMovesCheckbox?.checked) {
+                this.renderer.showValidMoveIndicators();
+            }
             
             // Update the UI
             this.update();

@@ -431,6 +431,10 @@ class Renderer {
         // Clear existing indicators
         this.clearValidMoveIndicators();
         
+        // Get checkbox state for opacity
+        const showValidMovesCheckbox = document.getElementById('show-valid-moves');
+        const opacity = showValidMovesCheckbox?.checked ? 0.2 : 0;
+        
         // Create indicators for each valid move
         for (const hex of this.gameState.validMoves) {
             const position = this.hexToPosition(hex);
@@ -469,11 +473,13 @@ class Renderer {
                 geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
             }
             
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x00cc66,
+            // Create material with opacity based on checkbox state
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x00ff00,
                 transparent: true,
-                opacity: 0.2,
-                side: THREE.DoubleSide
+                opacity: opacity,
+                roughness: 0.5,
+                metalness: 0.5
             });
             
             const indicator = new THREE.Mesh(geometry, material);

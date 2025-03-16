@@ -255,31 +255,151 @@ class UserInterface {
     }
 
     /**
-     * Handle canvas clicks
+     * Handle canvas click
      * @param {MouseEvent} event - The mouse event
      */
     onCanvasClick(event) {
         // Get the hex that was clicked
         const hex = this.renderer.onMouseClick(event);
         
-        if (hex) {
-            // If we're in the move piece action and have already selected a piece
-            if (this.gameState.selectedAction === 'movePiece' && this.gameState.selectedHex) {
-                // Show the selected hex indicator
-                this.renderer.showSelectedHexIndicator(hex);
+        if (!hex) return;
+        
+        // If we have a preview tile showing
+        if (this.renderer.previewTile) {
+            // Check if we clicked on the confirmation UI
+            const uiAction = this.renderer.checkConfirmationUIIntersection(this.renderer.mouse);
+            
+            if (uiAction === 'confirm') {
+                // Confirm the placement
+                this.confirmTilePlacement();
+            } else if (uiAction === 'cancel' || !hex.equals(this.renderer.previewHex)) {
+                // Cancel if we clicked the cancel button or clicked elsewhere
+                this.cancelTilePlacement();
             }
-            
-            // Process the hex selection in the game state
-            this.gameState.selectHex(hex);
-            
-            // Show valid moves only if the checkbox is checked
-            if (this.elements.showValidMovesCheckbox?.checked) {
-                this.renderer.showValidMoveIndicators();
-            }
-            
-            // Update the UI
-            this.update();
+            return;
         }
+        
+        // Check if this is a valid tile placement location
+        if (this.canPlaceTileAt(hex)) {
+            // Show preview tile
+            this.showTilePreview(hex);
+            return;
+        }
+        
+        // Handle other game actions
+        if (!this.gameState.selectedAction) {
+            this.message = 'Select an action first.';
+            return;
+        }
+        
+        // If we're moving a piece and haven't selected a piece yet
+        if (this.gameState.selectedAction === 'movePiece' && !this.gameState.selectedHex) {
+            const cell = this.gameState.grid.getCell(hex);
+            if (!cell || !cell.piece || cell.piece.color !== this.gameState.currentPlayer) {
+                this.message = 'Select one of your pieces to move.';
+                return;
+            }
+            
+            this.gameState.selectHex(hex);
+            return;
+        }
+        
+        // Process hex selection in game state
+        this.gameState.selectHex(hex);
+        this.update();
+    }
+
+    /**
+     * Check if a tile can be placed at the given hex
+     * @param {Hex} hex - The hex to check
+     * @returns {boolean} True if tile placement is valid
+     */
+    canPlaceTileAt(hex) {
+        const player = this.gameState.players[this.gameState.currentPlayer];
+        
+        // Check if player has tiles available
+        if (player.tiles.placed >= player.tiles.total) {
+            return false;
+        }
+        
+        // Check if the hex is a valid placement location
+        return this.gameState.grid.isValidTilePlacement(hex);
+    }
+
+    /**
+     * Show a preview tile at the specified hex
+     * @param {Hex} hex - The hex to show the preview at
+     */
+    showTilePreview(hex) {
+        this.renderer.showPreviewTile(hex, this.gameState.currentPlayer);
+    }
+
+    /**
+     * Confirm the tile placement
+     */
+    confirmTilePlacement() {
+        const hex = this.renderer.previewHex;
+        if (!hex) return;
+        
+        const previewTile = this.renderer.previewTile;
+        const finalY = 0; // Final Y position at ground level
+        const duration = 500; // Animation duration in milliseconds
+        const startY = previewTile.position.y;
+        const startTime = Date.now();
+        
+        // Animate the tile dropping
+        const animate = () => {
+            const currentTime = Date.now();
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Use easeOutBounce for a bouncy effect
+            const easeOutBounce = (x) => {
+                const n1 = 7.5625;
+                const d1 = 2.75;
+                
+                if (x < 1 / d1) {
+                    return n1 * x * x;
+                } else if (x < 2 / d1) {
+                    return n1 * (x -= 1.5 / d1) * x + 0.75;
+                } else if (x < 2.5 / d1) {
+                    return n1 * (x -= 2.25 / d1) * x + 0.9375;
+                } else {
+                    return n1 * (x -= 2.625 / d1) * x + 0.984375;
+                }
+            };
+            
+            // Update tile position
+            previewTile.position.y = startY + (finalY - startY) * easeOutBounce(progress);
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Animation complete, update game state
+                this.renderer.clearPreviewTile();
+                this.gameState.placeTile(hex);
+                this.gameState.saveToHistory();
+                this.gameState.checkWinConditions();
+                
+                // Switch player if game isn't over
+                if (!this.gameState.gameOver) {
+                    this.gameState.switchPlayer();
+                }
+                
+                // Update the UI
+                this.update();
+            }
+        };
+        
+        // Start the animation
+        animate();
+    }
+
+    /**
+     * Cancel the tile placement
+     */
+    cancelTilePlacement() {
+        this.renderer.clearPreviewTile();
     }
 
     /**

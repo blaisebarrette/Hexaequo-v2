@@ -32,6 +32,14 @@ class Renderer {
         this.validMoveIndicators = []; // Array of valid move indicator objects
         this.selectedHexIndicator = null; // Indicator for selected hex
         
+        // Preview objects
+        this.previewTile = null; // Preview tile for placement
+        this.previewHex = null; // Current hex where preview is shown
+        this.confirmationUI = null; // Group containing confirmation UI elements
+        
+        // Valid placement hitboxes
+        this.placementHitboxes = new Map(); // Map of hex hash to hitbox object
+        
         // Lighting
         this.lights = [];
         
@@ -192,6 +200,9 @@ class Renderer {
         
         // Show valid move indicators
         this.showValidMoveIndicators();
+        
+        // Update placement hitboxes
+        this.updatePlacementHitboxes();
         
         // Update camera target to center of board
         this.updateCameraTarget();
@@ -664,36 +675,54 @@ class Renderer {
      * @returns {Hex|null} The selected hex or null if none was selected
      */
     onMouseClick(event) {
-        // Calculate mouse position in normalized device coordinates (-1 to +1)
+        // Update mouse position
         const rect = this.canvas.getBoundingClientRect();
-        this.mouse.x = ((event.clientX - rect.left) / this.canvas.clientWidth) * 2 - 1;
-        this.mouse.y = -((event.clientY - rect.top) / this.canvas.clientHeight) * 2 + 1;
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         
-        // Update the picking ray with the camera and mouse position
+        console.log('Click detected at:', { x: this.mouse.x, y: this.mouse.y });
+        
+        // Update the raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // Calculate objects intersecting the picking ray
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
-        
-        // Find the first hex object that was intersected
-        for (const intersect of intersects) {
-            let object = intersect.object;
+        // First check for UI interactions
+        if (this.confirmationUI) {
+            console.log('Checking confirmation UI intersection...');
+            const uiAction = this.checkConfirmationUIIntersection(this.mouse);
+            console.log('UI Action result:', uiAction);
             
-            // Check if it's a valid move indicator
-            if (object.userData && object.userData.isValidMoveIndicator) {
-                return object.userData.hex;
+            if (uiAction) {
+                console.log('UI interaction detected:', uiAction);
+                return uiAction;
             }
-            
-            // Traverse up to find the hex group
-            while (object && object.parent !== this.scene) {
+        }
+        
+        // Then check for hitbox intersections
+        const hitboxIntersects = this.raycaster.intersectObjects(Array.from(this.placementHitboxes.values()));
+        console.log('Hitbox intersections:', hitboxIntersects.length);
+        
+        if (hitboxIntersects.length > 0) {
+            const hitbox = hitboxIntersects[0].object;
+            console.log('Hitbox clicked:', hitbox.userData);
+            return hitbox.userData.hex;
+        }
+        
+        // Finally check for hex intersections
+        const hexIntersects = this.raycaster.intersectObjects(this.scene.children, true);
+        console.log('Hex intersections:', hexIntersects.length);
+        
+        if (hexIntersects.length > 0) {
+            let object = hexIntersects[0].object;
+            while (object.parent && !object.userData.hex) {
                 object = object.parent;
             }
-            
-            if (object && object.userData && object.userData.hex) {
+            if (object.userData.hex) {
+                console.log('Hex clicked:', object.userData.hex);
                 return object.userData.hex;
             }
         }
         
+        console.log('No valid intersection found');
         return null;
     }
 
@@ -880,6 +909,253 @@ class Renderer {
                 });
             }
         });
+    }
+
+    /**
+     * Show a preview tile at the specified hex
+     * @param {Hex} hex - The hex to show the preview at
+     * @param {string} color - Color of the preview tile
+     */
+    showPreviewTile(hex, color) {
+        // Remove existing preview if any
+        this.clearPreviewTile();
+        
+        // Create preview tile
+        const tileObject = this.createTileObject(color);
+        const position = this.hexToPosition(hex);
+        
+        // Set position and opacity
+        tileObject.position.set(position.x, this.hexHeight + 0.5, position.z); // Position above final placement
+        tileObject.traverse((child) => {
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    // Handle multiple materials
+                    child.material = child.material.map(mat => {
+                        const newMat = mat.clone();
+                        newMat.transparent = true;
+                        newMat.opacity = 0.5;
+                        return newMat;
+                    });
+                } else {
+                    // Handle single material
+                    child.material = child.material.clone();
+                    child.material.transparent = true;
+                    child.material.opacity = 0.5;
+                }
+            }
+        });
+        
+        this.previewTile = tileObject;
+        this.previewHex = hex;
+        this.scene.add(tileObject);
+        
+        // Create and show confirmation UI
+        this.showConfirmationUI(position);
+    }
+
+    /**
+     * Clear the preview tile and confirmation UI
+     */
+    clearPreviewTile() {
+        if (this.previewTile) {
+            this.scene.remove(this.previewTile);
+            this.previewTile = null;
+            this.previewHex = null;
+        }
+        this.clearConfirmationUI();
+    }
+
+    /**
+     * Show confirmation UI elements
+     * @param {Object} position - Position to show the UI at
+     */
+    showConfirmationUI(position) {
+        // Remove existing UI if any
+        this.clearConfirmationUI();
+        
+        // Create a group for the UI elements
+        const uiGroup = new THREE.Group();
+        
+        // Create checkmark sprite using data URL
+        const checkmarkDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#4CAF50"/>
+            </svg>`);
+        
+        const checkmarkTexture = new THREE.TextureLoader().load(checkmarkDataURL);
+        const checkmarkMaterial = new THREE.SpriteMaterial({ 
+            map: checkmarkTexture,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false // Ensure UI is always visible
+        });
+        const checkmark = new THREE.Sprite(checkmarkMaterial);
+        checkmark.scale.set(0.7, 0.7, 1);
+        checkmark.position.set(position.x + 1.0, this.hexHeight + 1.5, position.z);
+        checkmark.userData = { type: 'confirm' };
+        
+        // Create cancel sprite using data URL
+        const cancelDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" fill="#F44336"/>
+            </svg>`);
+        
+        const cancelTexture = new THREE.TextureLoader().load(cancelDataURL);
+        const cancelMaterial = new THREE.SpriteMaterial({ 
+            map: cancelTexture,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false // Ensure UI is always visible
+        });
+        const cancel = new THREE.Sprite(cancelMaterial);
+        cancel.scale.set(0.7, 0.7, 1);
+        cancel.position.set(position.x - 1.0, this.hexHeight + 1.5, position.z);
+        cancel.userData = { type: 'cancel' };
+        
+        // Add sprites to group
+        uiGroup.add(checkmark);
+        uiGroup.add(cancel);
+        
+        // Add hover effect
+        const onMouseMove = (event) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / this.canvas.clientWidth) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / this.canvas.clientHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects([checkmark, cancel]);
+            
+            // Reset scales
+            checkmark.scale.set(0.7, 0.7, 1);
+            cancel.scale.set(0.7, 0.7, 1);
+            
+            if (intersects.length > 0) {
+                // Enlarge hovered sprite
+                intersects[0].object.scale.set(0.8, 0.8, 1);
+                this.canvas.style.cursor = 'pointer';
+            } else {
+                this.canvas.style.cursor = 'default';
+            }
+        };
+        
+        this.canvas.addEventListener('mousemove', onMouseMove);
+        
+        this.confirmationUI = uiGroup;
+        this.scene.add(uiGroup);
+        
+        // Store the event listener for cleanup
+        this.confirmationUI.userData = { 
+            ...this.confirmationUI.userData,
+            cleanup: () => {
+                this.canvas.removeEventListener('mousemove', onMouseMove);
+            }
+        };
+    }
+
+    /**
+     * Clear the confirmation UI elements
+     */
+    clearConfirmationUI() {
+        if (this.confirmationUI) {
+            // Clean up event listeners
+            if (this.confirmationUI.userData && this.confirmationUI.userData.cleanup) {
+                this.confirmationUI.userData.cleanup();
+            }
+            this.scene.remove(this.confirmationUI);
+            this.confirmationUI = null;
+        }
+    }
+
+    /**
+     * Check if a point intersects with confirmation UI elements
+     * @param {THREE.Vector2} point - Screen coordinates
+     * @returns {string|null} 'confirm', 'cancel', or null
+     */
+    checkConfirmationUIIntersection(point) {
+        if (!this.confirmationUI) {
+            console.log('No confirmation UI present');
+            return null;
+        }
+        
+        console.log('Checking UI intersections with point:', point);
+        console.log('Available UI elements:', this.confirmationUI.children.map(child => child.userData.type));
+        
+        this.raycaster.setFromCamera(point, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.confirmationUI.children, true);
+        
+        console.log('Found UI intersections:', intersects.length);
+        
+        if (intersects.length > 0) {
+            const hitObject = intersects[0].object;
+            console.log('Hit UI object:', hitObject);
+            console.log('Hit object userData:', hitObject.userData);
+            
+            let parent = hitObject;
+            while (parent && !parent.userData.type) {
+                console.log('Traversing up to parent:', parent);
+                parent = parent.parent;
+            }
+            
+            const result = parent ? parent.userData.type : null;
+            console.log('Final UI interaction result:', result);
+            return result;
+        }
+        
+        console.log('No UI intersections found');
+        return null;
+    }
+
+    /**
+     * Update valid placement hitboxes based on game state
+     */
+    updatePlacementHitboxes() {
+        // Clear existing hitboxes
+        this.clearPlacementHitboxes();
+        
+        if (!this.gameState) return;
+        
+        const player = this.gameState.players[this.gameState.currentPlayer];
+        
+        // Only show hitboxes if:
+        // 1. Player has tiles available
+        // 2. No other action is selected
+        if (player.tiles.placed >= player.tiles.total || this.gameState.selectedAction) {
+            return;
+        }
+        
+        // Get valid placement positions
+        const validPlacements = this.gameState.grid.getValidTilePlacements(this.gameState.currentPlayer);
+        
+        // Create hitbox for each valid position
+        validPlacements.forEach(hex => {
+            const position = this.hexToPosition(hex);
+            
+            // Create a transparent cylinder as hitbox
+            const geometry = new THREE.CylinderGeometry(this.hexSize * 0.8, this.hexSize * 0.8, 0.25, 6);
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x0000ff, // Bleu
+                transparent: true,
+                opacity: 0,
+                side: THREE.DoubleSide
+            });
+            
+            const hitbox = new THREE.Mesh(geometry, material);
+            hitbox.position.set(position.x, 0.125, position.z); // Slightly above the ground
+            hitbox.userData = { type: 'placementHitbox', hex };
+            
+            this.placementHitboxes.set(hex.hash(), hitbox);
+            this.scene.add(hitbox);
+        });
+    }
+
+    /**
+     * Clear all placement hitboxes
+     */
+    clearPlacementHitboxes() {
+        this.placementHitboxes.forEach(hitbox => {
+            this.scene.remove(hitbox);
+        });
+        this.placementHitboxes.clear();
     }
 }
 

@@ -262,6 +262,27 @@ class UserInterface {
         // Get the hex that was clicked
         const hex = this.renderer.onMouseClick(event);
         
+        // Check for UI interactions first
+        if (this.renderer.confirmationUI) {
+            const uiAction = this.renderer.checkConfirmationUIIntersection(this.renderer.mouse);
+            
+            if (uiAction === 'cancel') {
+                if (this.gameState.selectedAction === 'movePiece') {
+                    // Cancel piece movement
+                    this.gameState.selectedAction = null;
+                    this.gameState.selectedHex = null;
+                    this.gameState.validMoves = [];
+                    this.renderer.clearValidMoveIndicators();
+                    this.update();
+                    return;
+                } else if (this.renderer.previewTile) {
+                    // Cancel tile placement
+                    this.cancelTilePlacement();
+                    return;
+                }
+            }
+        }
+        
         if (!hex) return;
         
         // If we have a preview tile showing

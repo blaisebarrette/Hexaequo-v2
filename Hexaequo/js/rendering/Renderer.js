@@ -1236,6 +1236,73 @@ class Renderer {
     }
 
     /**
+     * Show cancel button above a selected piece
+     * @param {THREE.Vector3} position - The position to show the button at
+     */
+    showCancelButton(position) {
+        // Remove existing UI if any
+        this.clearConfirmationUI();
+        
+        // Create a group for the UI elements
+        const uiGroup = new THREE.Group();
+        
+        // Create cancel sprite using data URL
+        const cancelDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" fill="#F44336"/>
+            </svg>`);
+        
+        const cancelTexture = new THREE.TextureLoader().load(cancelDataURL);
+        const cancelMaterial = new THREE.SpriteMaterial({ 
+            map: cancelTexture,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false // Ensure UI is always visible
+        });
+        const cancel = new THREE.Sprite(cancelMaterial);
+        cancel.scale.set(0.7, 0.7, 1);
+        cancel.position.set(position.x, position.y + 1.5, position.z);
+        cancel.userData = { type: 'cancel' };
+        
+        // Add hover effect
+        const onMouseMove = (event) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / this.canvas.clientWidth) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / this.canvas.clientHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects([cancel]);
+            
+            // Reset scale
+            cancel.scale.set(0.7, 0.7, 1);
+            
+            if (intersects.length > 0) {
+                // Enlarge hovered sprite
+                cancel.scale.set(0.8, 0.8, 1);
+                this.canvas.style.cursor = 'pointer';
+            } else {
+                this.canvas.style.cursor = 'default';
+            }
+        };
+        
+        this.canvas.addEventListener('mousemove', onMouseMove);
+        
+        // Add sprite to group
+        uiGroup.add(cancel);
+        
+        this.confirmationUI = uiGroup;
+        this.scene.add(uiGroup);
+        
+        // Store the event listener for cleanup
+        this.confirmationUI.userData = { 
+            ...this.confirmationUI.userData,
+            cleanup: () => {
+                this.canvas.removeEventListener('mousemove', onMouseMove);
+            }
+        };
+    }
+
+    /**
      * Update the elevation of the selected piece
      */
     updateSelectedPieceElevation() {
@@ -1255,20 +1322,30 @@ class Renderer {
             }
         }
 
-        // If a piece is selected for movement, elevate it
+        // If a piece is selected for movement, elevate it and show cancel button
         if (this.gameState.selectedAction === 'movePiece' && this.gameState.selectedHex) {
             const selectedHexObject = this.hexObjects.get(this.gameState.selectedHex.hash());
             if (selectedHexObject && selectedHexObject.children) {
                 selectedHexObject.children.forEach(child => {
                     if (child.userData && child.userData.isPiece) {
                         const baseHeight = child.userData.type === 'disc' ? 0 : 0.2875;
-                        const elevatedHeight = baseHeight + 1;
+                        const elevatedHeight = baseHeight + 0.5;
                         if (child.position.y !== elevatedHeight) {
                             this.animatePieceElevation(child, child.position.y, elevatedHeight);
+                            // Show cancel button above the piece
+                            const position = new THREE.Vector3(
+                                selectedHexObject.position.x,
+                                elevatedHeight - 0.25,
+                                selectedHexObject.position.z
+                            );
+                            this.showCancelButton(position);
                         }
                     }
                 });
             }
+        } else {
+            // Clear the cancel button if no piece is selected
+            this.clearConfirmationUI();
         }
     }
 }

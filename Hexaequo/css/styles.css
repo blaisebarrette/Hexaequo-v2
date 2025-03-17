@@ -6,6 +6,7 @@
 }
 
 :root {
+    /* Light theme variables */
     --primary-color: #000;
     --secondary-color: #fff;
     --accent-color: #444;
@@ -15,7 +16,43 @@
     --border-color: #ddd;
     --shadow-color: rgba(0, 0, 0, 0.2);
     --modal-background: rgba(0, 0, 0, 0.7);
-    --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --text-color: #333;
+    --header-bg: #fff;
+    --sidebar-bg: #fff;
+    --card-bg: #f8f8f8;
+    --button-bg: #4a4a4a;
+    --button-hover: #666;
+    --button-active: #333;
+    --button-text: #fff;
+    --input-bg: #fff;
+    --input-text: #333;
+    --input-border: #ddd;
+    --input-focus: #00cc66;
+}
+
+/* Dark theme variables */
+[data-theme="dark"] {
+    --primary-color: #fff;
+    --secondary-color: #1a1a1a;
+    --accent-color: #666;
+    --highlight-color: #00ff80;
+    --error-color: #ff4d4d;
+    --background-color: #121212;
+    --border-color: #333;
+    --shadow-color: rgba(0, 0, 0, 0.4);
+    --modal-background: rgba(0, 0, 0, 0.8);
+    --text-color: #e0e0e0;
+    --header-bg: #1a1a1a;
+    --sidebar-bg: #1a1a1a;
+    --card-bg: #242424;
+    --button-bg: #333;
+    --button-hover: #444;
+    --button-active: #555;
+    --button-text: #fff;
+    --input-bg: #2a2a2a;
+    --input-text: #e0e0e0;
+    --input-border: #444;
+    --input-focus: #00ff80;
 }
 
 html, body {
@@ -28,7 +65,8 @@ html, body {
 
 body {
     font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
+    background-color: var(--background-color);
+    color: var(--text-color);
     display: flex;
     flex-direction: column;
 }
@@ -48,14 +86,14 @@ header {
     justify-content: space-between;
     align-items: center;
     padding: 10px 20px;
-    background-color: white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-color: var(--header-bg);
+    box-shadow: 0 2px 4px var(--shadow-color);
     z-index: 10;
 }
 
 h1 {
     margin: 0;
-    color: #333;
+    color: var(--text-color);
     font-size: 1.5em;
 }
 
@@ -71,7 +109,7 @@ main {
 .game-board-container {
     flex: 1;
     position: relative;
-    background-color: white;
+    background-color: var(--background-color);
     overflow: hidden;
 }
 
@@ -84,7 +122,7 @@ main {
 /* Game info sidebar */
 .game-info {
     width: 250px;
-    background-color: white;
+    background-color: var(--sidebar-bg);
     padding: 15px;
     display: flex;
     flex-direction: column;
@@ -100,10 +138,10 @@ main {
     left: 20px;
     display: flex;
     gap: 8px;
-    background-color: rgba(255, 255, 255, 0.9);
+    background-color: var(--card-bg);
     padding: 8px;
     border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 5px var(--shadow-color);
 }
 
 /* Loading indicator */
@@ -112,8 +150,8 @@ main {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background-color: rgba(0, 0, 0, 0.8);
-    color: white;
+    background-color: var(--secondary-color);
+    color: var(--text-color);
     padding: 20px;
     border-radius: 8px;
     z-index: 1000;
@@ -121,8 +159,8 @@ main {
 
 /* Buttons */
 button {
-    background-color: #4a4a4a;
-    color: white;
+    background-color: var(--button-bg);
+    color: var(--button-text);
     border: none;
     padding: 8px 16px;
     border-radius: 4px;
@@ -132,16 +170,16 @@ button {
 }
 
 button:hover {
-    background-color: #666;
+    background-color: var(--button-hover);
 }
 
 button:active {
-    background-color: #333;
+    background-color: var(--button-active);
 }
 
 /* Game pieces display */
 .player-pieces {
-    background-color: #f8f8f8;
+    background-color: var(--card-bg);
     padding: 12px;
     border-radius: 4px;
 }
@@ -178,7 +216,7 @@ button:active {
 /* Game status */
 .game-status {
     padding: 12px;
-    background-color: #f8f8f8;
+    background-color: var(--card-bg);
     border-radius: 4px;
 }
 
@@ -186,12 +224,12 @@ button:active {
 footer {
     padding: 10px;
     text-align: center;
-    background-color: white;
+    background-color: var(--header-bg);
     border-top: 1px solid var(--border-color);
 }
 
 footer a {
-    color: #333;
+    color: var(--text-color);
     text-decoration: none;
 }
 
@@ -261,12 +299,13 @@ footer a:hover {
 
 .modal-content {
     background-color: var(--secondary-color);
+    color: var(--text-color);
     margin: 10% auto;
     padding: 2rem;
     width: 80%;
     max-width: 800px;
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 16px var(--shadow-color);
     position: relative;
 }
 
@@ -276,6 +315,7 @@ footer a:hover {
     right: 1.5rem;
     font-size: 1.5rem;
     cursor: pointer;
+    color: var(--text-color);
 }
 
 .close-modal:hover {
@@ -342,4 +382,98 @@ footer a:hover {
         width: 36px;
         height: 36px;
     }
+}
+
+/* Theme toggle button */
+#theme-toggle-btn {
+    font-size: 1.2em;
+    padding: 8px 12px;
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+#theme-toggle-btn:hover {
+    background-color: var(--button-hover);
+    transform: scale(1.1);
+}
+
+/* Input styles */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+    background-color: var(--input-bg);
+    color: var(--input-text);
+    border: 1px solid var(--input-border);
+    padding: 8px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--input-focus);
+}
+
+/* Checkbox and radio styles */
+input[type="checkbox"],
+input[type="radio"] {
+    accent-color: var(--highlight-color);
+}
+
+/* Range input styles */
+input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: var(--input-bg);
+    border-radius: 3px;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--highlight-color);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--highlight-color);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+/* Player colors */
+.black {
+    color: var(--primary-color);
+}
+
+[data-theme="dark"] .black {
+    color: #fff;
+}
+
+.white {
+    color: var(--text-color);
+}
+
+/* Transition for theme switching */
+body * {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 } 

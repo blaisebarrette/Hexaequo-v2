@@ -57,7 +57,7 @@ class Renderer {
     init() {
         // Create scene
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0xf0f0f0);
+        this.updateSceneTheme();
         
         // Create camera
         const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
@@ -91,12 +91,11 @@ class Renderer {
         // Add lights
         this.setupLights();
         
-        // Add grid helper for development
-        // const gridHelper = new THREE.GridHelper(20, 20);
-        // this.scene.add(gridHelper);
-        
         // Handle window resize
         window.addEventListener('resize', () => this.onWindowResize());
+        
+        // Listen for theme changes
+        this.setupThemeListener();
         
         // Start animation loop
         this.animate();
@@ -106,13 +105,26 @@ class Renderer {
      * Set up scene lighting
      */
     setupLights() {
+        // Remove existing lights
+        this.lights.forEach(light => this.scene.remove(light));
+        this.lights = [];
+        
+        // Get theme
+        const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
+        
         // Ambient light
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(
+            isDarkTheme ? 0x333333 : 0xffffff,
+            isDarkTheme ? 0.3 : 0.5
+        );
         this.scene.add(ambientLight);
         this.lights.push(ambientLight);
         
         // Directional light (sun)
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const directionalLight = new THREE.DirectionalLight(
+            isDarkTheme ? 0xcccccc : 0xffffff,
+            isDarkTheme ? 0.7 : 0.8
+        );
         directionalLight.position.set(10, 20, 10);
         directionalLight.castShadow = true;
         
@@ -130,10 +142,42 @@ class Renderer {
         this.lights.push(directionalLight);
         
         // Add a soft fill light from the opposite direction
-        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        const fillLight = new THREE.DirectionalLight(
+            isDarkTheme ? 0x666666 : 0xffffff,
+            isDarkTheme ? 0.2 : 0.3
+        );
         fillLight.position.set(-10, 10, -10);
         this.scene.add(fillLight);
         this.lights.push(fillLight);
+    }
+
+    /**
+     * Update scene theme based on current theme
+     */
+    updateSceneTheme() {
+        const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
+        this.scene.background = new THREE.Color(isDarkTheme ? 0x121212 : 0xf0f0f0);
+        this.setupLights();
+    }
+
+    /**
+     * Set up theme change listener
+     */
+    setupThemeListener() {
+        // Create an observer to watch for theme changes
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'data-theme') {
+                    this.updateSceneTheme();
+                }
+            });
+        });
+
+        // Start observing theme changes
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme']
+        });
     }
 
     /**

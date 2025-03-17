@@ -18,6 +18,7 @@
         <header>
             <h1>Hexaequo</h1>
             <div class="game-controls">
+                <button id="theme-toggle-btn" title="Toggle Dark Mode">🌓</button>
                 <button id="new-game-btn">New Game</button>
                 <button id="save-game-btn">Save Game</button>
                 <button id="load-game-btn">Load Game</button>
@@ -153,6 +154,31 @@
                     });
             });
         }
+
+        // Theme handling
+        document.addEventListener('DOMContentLoaded', () => {
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            
+            // Check for saved theme preference or system preference
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
+            // Set initial theme
+            if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeToggleBtn.textContent = '☀️';
+            }
+            
+            // Theme toggle button click handler
+            themeToggleBtn.addEventListener('click', () => {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                
+                document.documentElement.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+                themeToggleBtn.textContent = newTheme === 'dark' ? '☀️' : '🌓';
+            });
+        });
     </script>
     
     <!-- Three.js library -->

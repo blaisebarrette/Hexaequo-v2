@@ -279,6 +279,19 @@ class UserInterface {
             return;
         }
         
+        // Check if we clicked on a piece that belongs to the current player
+        const cell = this.gameState.grid.getCell(hex);
+        if (cell && cell.piece && cell.piece.color === this.gameState.currentPlayer && !this.gameState.selectedAction) {
+            // Automatically initiate piece movement
+            this.onActionButtonClick('movePiece');
+            // Select the clicked piece
+            this.gameState.selectHex(hex);
+            // Update message to indicate next step
+            this.gameState.message = 'Select a destination for the piece.';
+            this.update();
+            return;
+        }
+        
         // Check if this is a valid tile placement location
         if (this.canPlaceTileAt(hex)) {
             // Show preview tile

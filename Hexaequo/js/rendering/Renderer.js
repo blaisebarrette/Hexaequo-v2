@@ -115,7 +115,7 @@ class Renderer {
         // Ambient light
         const ambientLight = new THREE.AmbientLight(
             isDarkTheme ? 0x333333 : 0xffffff,
-            isDarkTheme ? 0.3 : 0.5
+            isDarkTheme ? 0.4 : 0.5
         );
         this.scene.add(ambientLight);
         this.lights.push(ambientLight);

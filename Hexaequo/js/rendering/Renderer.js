@@ -250,6 +250,9 @@ class Renderer {
         
         // Update camera target to center of board
         this.updateCameraTarget();
+        
+        // Update selected piece elevation
+        this.updateSelectedPieceElevation();
     }
 
     /**
@@ -1200,6 +1203,86 @@ class Renderer {
             this.scene.remove(hitbox);
         });
         this.placementHitboxes.clear();
+    }
+
+    /**
+     * Animate a piece's elevation
+     * @param {THREE.Object3D} piece - The piece to animate
+     * @param {number} startY - Starting Y position
+     * @param {number} endY - Ending Y position
+     */
+    animatePieceElevation(piece, startY, endY) {
+        const duration = 500; // Animation duration in milliseconds
+        const startTime = Date.now();
+        
+        const animate = () => {
+            const currentTime = Date.now();
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Use easeOutBounce for a bouncy effect
+            const easeOutBounce = (x) => {
+                const n1 = 7.5625;
+                const d1 = 2.75;
+                
+                if (x < 1 / d1) {
+                    return n1 * x * x;
+                } else if (x < 2 / d1) {
+                    return n1 * (x -= 1.5 / d1) * x + 0.75;
+                } else if (x < 2.5 / d1) {
+                    return n1 * (x -= 2.25 / d1) * x + 0.9375;
+                } else {
+                    return n1 * (x -= 2.625 / d1) * x + 0.984375;
+                }
+            };
+            
+            // Update piece position
+            piece.position.y = startY + (endY - startY) * easeOutBounce(progress);
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        // Start the animation
+        animate();
+    }
+
+    /**
+     * Update the elevation of the selected piece
+     */
+    updateSelectedPieceElevation() {
+        if (!this.gameState) return;
+
+        // Reset all pieces to ground level first
+        for (const [_, hexObject] of this.hexObjects) {
+            if (hexObject.children) {
+                hexObject.children.forEach(child => {
+                    if (child.userData && child.userData.isPiece) {
+                        const baseHeight = child.userData.type === 'disc' ? 0 : 0.2875;
+                        if (child.position.y !== baseHeight) {
+                            this.animatePieceElevation(child, child.position.y, baseHeight);
+                        }
+                    }
+                });
+            }
+        }
+
+        // If a piece is selected for movement, elevate it
+        if (this.gameState.selectedAction === 'movePiece' && this.gameState.selectedHex) {
+            const selectedHexObject = this.hexObjects.get(this.gameState.selectedHex.hash());
+            if (selectedHexObject && selectedHexObject.children) {
+                selectedHexObject.children.forEach(child => {
+                    if (child.userData && child.userData.isPiece) {
+                        const baseHeight = child.userData.type === 'disc' ? 0 : 0.2875;
+                        const elevatedHeight = baseHeight + 1;
+                        if (child.position.y !== elevatedHeight) {
+                            this.animatePieceElevation(child, child.position.y, elevatedHeight);
+                        }
+                    }
+                });
+            }
+        }
     }
 }
 

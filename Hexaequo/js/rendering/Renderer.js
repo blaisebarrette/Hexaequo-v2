@@ -77,6 +77,167 @@ class ObjectPool {
     }
 }
 
+/**
+ * MaterialCache class to manage and reuse materials and textures.
+ * This reduces memory usage and GPU load.
+ */
+class MaterialCache {
+    constructor() {
+        // Cache for materials
+        this.materials = new Map();
+        
+        // Cache for textures
+        this.textures = new Map();
+        
+        // Cache for geometries
+        this.geometries = new Map();
+        
+        // Common material parameters
+        this.defaults = {
+            standard: {
+                roughness: 0.5,
+                metalness: 0.3
+            },
+            basic: {
+                transparent: true
+            }
+        };
+    }
+    
+    /**
+     * Get or create a MeshStandardMaterial
+     * @param {Object} params - Material parameters
+     * @returns {THREE.MeshStandardMaterial} The cached or new material
+     */
+    getStandardMaterial(params) {
+        // Create a unique key based on the parameters
+        const key = this._createKey('standard', params);
+        
+        if (this.materials.has(key)) {
+            return this.materials.get(key);
+        }
+        
+        // Create a new material with default and custom parameters
+        const material = new THREE.MeshStandardMaterial({
+            ...this.defaults.standard,
+            ...params
+        });
+        
+        // Store in cache
+        this.materials.set(key, material);
+        return material;
+    }
+    
+    /**
+     * Get or create a MeshBasicMaterial
+     * @param {Object} params - Material parameters
+     * @returns {THREE.MeshBasicMaterial} The cached or new material
+     */
+    getBasicMaterial(params) {
+        // Create a unique key based on the parameters
+        const key = this._createKey('basic', params);
+        
+        if (this.materials.has(key)) {
+            return this.materials.get(key);
+        }
+        
+        // Create a new material with default and custom parameters
+        const material = new THREE.MeshBasicMaterial({
+            ...this.defaults.basic,
+            ...params
+        });
+        
+        // Store in cache
+        this.materials.set(key, material);
+        return material;
+    }
+    
+    /**
+     * Get or create a texture from a URL
+     * @param {string} url - The texture URL
+     * @returns {THREE.Texture} The cached or new texture
+     */
+    getTexture(url) {
+        if (this.textures.has(url)) {
+            return this.textures.get(url);
+        }
+        
+        // Create a new texture
+        const texture = new THREE.TextureLoader().load(url);
+        
+        // Apply common settings
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.minFilter = THREE.LinearMipMapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        // Store in cache
+        this.textures.set(url, texture);
+        return texture;
+    }
+    
+    /**
+     * Get or create a cylinder geometry
+     * @param {number} radius - Cylinder radius
+     * @param {number} height - Cylinder height
+     * @param {number} segments - Number of segments (default: 32)
+     * @returns {THREE.CylinderGeometry} The cached or new geometry
+     */
+    getCylinderGeometry(radius, height, segments = 32) {
+        const key = `cylinder_${radius}_${height}_${segments}`;
+        
+        if (this.geometries.has(key)) {
+            return this.geometries.get(key);
+        }
+        
+        const geometry = new THREE.CylinderGeometry(radius, radius, height, segments);
+        this.geometries.set(key, geometry);
+        return geometry;
+    }
+    
+    /**
+     * Get or create a hexagonal cylinder geometry
+     * @param {number} radius - Cylinder radius
+     * @param {number} height - Cylinder height
+     * @returns {THREE.CylinderGeometry} The cached or new geometry
+     */
+    getHexagonGeometry(radius, height) {
+        const key = `hexagon_${radius}_${height}`;
+        
+        if (this.geometries.has(key)) {
+            return this.geometries.get(key);
+        }
+        
+        const geometry = new THREE.CylinderGeometry(radius, radius, height, 6);
+        this.geometries.set(key, geometry);
+        return geometry;
+    }
+    
+    /**
+     * Create a unique key for material caching
+     * @param {string} type - Material type
+     * @param {Object} params - Material parameters
+     * @returns {string} A unique key for the material
+     * @private
+     */
+    _createKey(type, params) {
+        // Sort parameters by key to ensure consistent key generation
+        const sortedParams = Object.fromEntries(
+            Object.entries(params).sort(([a], [b]) => a.localeCompare(b))
+        );
+        
+        return `${type}_${JSON.stringify(sortedParams)}`;
+    }
+    
+    /**
+     * Clear unused resources from the cache
+     */
+    cleanup() {
+        // In a more complex implementation, we could track usage
+        // and remove rarely used resources
+    }
+}
+
 class Renderer {
     // Constantes de hauteur pour les éléments du jeu
     static HEIGHTS = {
@@ -115,6 +276,9 @@ class Renderer {
         this.controls = null;
         this.raycaster = null;
         this.mouse = new THREE.Vector2();
+        
+        // Resource caching
+        this.materialCache = new MaterialCache();
         
         // Game objects
         this.hexSize = 1.0; // Size of hexagons
@@ -208,13 +372,11 @@ class Renderer {
         this.validMoveIndicatorPool = new ObjectPool(
             // Create function
             () => {
-                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
-                const material = new THREE.MeshStandardMaterial({
+                const geometry = this.materialCache.getHexagonGeometry(this.hexSize * 0.95, 0.25);
+                const material = this.materialCache.getStandardMaterial({
                     color: 0x00ff00,
                     transparent: true,
-                    opacity: 0.2,
-                    roughness: 0.5,
-                    metalness: 0.5
+                    opacity: 0.2
                 });
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.rotation.y = Math.PI / 3;
@@ -235,13 +397,11 @@ class Renderer {
         this.discIndicatorPool = new ObjectPool(
             // Create function for disc-shaped indicators
             () => {
-                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.4, this.hexSize * 0.4, 0.25, 32);
-                const material = new THREE.MeshStandardMaterial({
+                const geometry = this.materialCache.getCylinderGeometry(this.hexSize * 0.4, 0.25, 32);
+                const material = this.materialCache.getStandardMaterial({
                     color: 0x00ff00,
                     transparent: true,
-                    opacity: 0.2,
-                    roughness: 0.5,
-                    metalness: 0.5
+                    opacity: 0.2
                 });
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.visible = false; // Start hidden
@@ -273,12 +433,10 @@ class Renderer {
                     bevelEnabled: false
                 };
                 const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-                const material = new THREE.MeshStandardMaterial({
+                const material = this.materialCache.getStandardMaterial({
                     color: 0x00ff00,
                     transparent: true,
-                    opacity: 0.2,
-                    roughness: 0.5,
-                    metalness: 0.5
+                    opacity: 0.2
                 });
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.rotation.x = Math.PI / 2; // Lay the ring flat
@@ -299,10 +457,9 @@ class Renderer {
         this.selectedHexIndicatorPool = new ObjectPool(
             // Create function
             () => {
-                const geometry = new THREE.CylinderGeometry(this.hexSize * 1.1, this.hexSize * 1.1, 0.05, 6);
-                const material = new THREE.MeshBasicMaterial({
+                const geometry = this.materialCache.getHexagonGeometry(this.hexSize * 1.1, 0.05);
+                const material = this.materialCache.getBasicMaterial({
                     color: 0x0088ff,
-                    transparent: true,
                     opacity: 0.7,
                     wireframe: true
                 });
@@ -324,11 +481,10 @@ class Renderer {
         this.placementHitboxPool = new ObjectPool(
             // Create function
             () => {
-                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.8, this.hexSize * 0.8, 0.25, 6);
-                const material = new THREE.MeshBasicMaterial({
+                const geometry = this.materialCache.getHexagonGeometry(this.hexSize * 0.8, 0.25);
+                const material = this.materialCache.getBasicMaterial({
                     color: 0x0000ff,
-                    transparent: true,
-                    opacity: 0, // Invisible hitbox
+                    opacity: 0,
                     side: THREE.DoubleSide
                 });
                 const hitbox = new THREE.Mesh(geometry, material);
@@ -649,13 +805,9 @@ class Renderer {
             return model;
         }
         
-        const geometry = new THREE.CylinderGeometry(
-            this.hexSize, 
-            this.hexSize, 
-            Renderer.HEIGHTS.TILE_BASE, 
-            6
-        );
-        const material = new THREE.MeshStandardMaterial({
+        // Use cached geometry and material
+        const geometry = this.materialCache.getHexagonGeometry(this.hexSize, Renderer.HEIGHTS.TILE_BASE);
+        const material = this.materialCache.getStandardMaterial({
             color: color === 'black' ? 0x222222 : 0xffffff,
             roughness: 0.7,
             metalness: 0.2
@@ -693,15 +845,15 @@ class Renderer {
             Renderer.HEIGHTS.RING_BASE;
         
         if (type === 'disc') {
-            geometry = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 32);
+            geometry = this.materialCache.getCylinderGeometry(0.4, 0.1, 32);
         } else if (type === 'ring') {
             const outerRadius = 0.4;
             const innerRadius = 0.25;
             const shape = new THREE.Shape()
-                .absarc(0, 0, outerRadius, 0, Math.PI * 2)
-                .holes.push(
-                    new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
-                );
+                .absarc(0, 0, outerRadius, 0, Math.PI * 2);
+            shape.holes.push(
+                new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
+            );
             const extrudeSettings = {
                 depth: 0.1,
                 bevelEnabled: false
@@ -709,7 +861,7 @@ class Renderer {
             geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         }
         
-        const material = new THREE.MeshStandardMaterial({
+        const material = this.materialCache.getStandardMaterial({
             color: color === 'black' ? 0x222222 : 0xffffff,
             roughness: 0.5,
             metalness: 0.5
@@ -1232,6 +1384,33 @@ class Renderer {
     }
 
     /**
+     * Create and cache UI textures
+     */
+    createUITextures() {
+        if (!this._uiTextures) {
+            this._uiTextures = {};
+            
+            // Create checkmark sprite using data URL
+            const checkmarkDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#4CAF50"/>
+                </svg>`);
+            
+            // Create cancel sprite using data URL
+            const cancelDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" fill="#F44336"/>
+                </svg>`);
+            
+            // Cache textures
+            this._uiTextures.checkmark = this.materialCache.getTexture(checkmarkDataURL);
+            this._uiTextures.cancel = this.materialCache.getTexture(cancelDataURL);
+        }
+        
+        return this._uiTextures;
+    }
+
+    /**
      * Show confirmation UI elements
      * @param {Object} position - Position to show the UI at
      */
@@ -1242,15 +1421,12 @@ class Renderer {
         // Create a group for the UI elements
         const uiGroup = new THREE.Group();
         
-        // Create checkmark sprite using data URL
-        const checkmarkDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#4CAF50"/>
-            </svg>`);
+        // Get or create UI textures
+        const uiTextures = this.createUITextures();
         
-        const checkmarkTexture = new THREE.TextureLoader().load(checkmarkDataURL);
+        // Create checkmark sprite
         const checkmarkMaterial = new THREE.SpriteMaterial({ 
-            map: checkmarkTexture,
+            map: uiTextures.checkmark,
             transparent: true,
             opacity: 0.9,
             depthTest: false // Ensure UI is always visible
@@ -1260,15 +1436,9 @@ class Renderer {
         checkmark.position.set(position.x + 1.0, this.hexHeight + Renderer.HEIGHTS.UI_ICONS, position.z);
         checkmark.userData = { type: 'confirm' };
         
-        // Create cancel sprite using data URL
-        const cancelDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" fill="#F44336"/>
-            </svg>`);
-        
-        const cancelTexture = new THREE.TextureLoader().load(cancelDataURL);
+        // Create cancel sprite
         const cancelMaterial = new THREE.SpriteMaterial({ 
-            map: cancelTexture,
+            map: uiTextures.cancel,
             transparent: true,
             opacity: 0.9,
             depthTest: false // Ensure UI is always visible
@@ -1459,15 +1629,12 @@ class Renderer {
         // Create a group for the UI elements
         const uiGroup = new THREE.Group();
         
-        // Create cancel sprite using data URL
-        const cancelDataURL = 'data:image/svg+xml;base64,' + btoa(`<?xml version="1.0" encoding="UTF-8"?>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" fill="#F44336"/>
-            </svg>`);
+        // Get or create UI textures
+        const uiTextures = this.createUITextures();
         
-        const cancelTexture = new THREE.TextureLoader().load(cancelDataURL);
+        // Create cancel sprite
         const cancelMaterial = new THREE.SpriteMaterial({ 
-            map: cancelTexture,
+            map: uiTextures.cancel,
             transparent: true,
             opacity: 0.9,
             depthTest: false // Ensure UI is always visible

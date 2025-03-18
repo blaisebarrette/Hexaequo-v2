@@ -3,6 +3,80 @@
  * Handles 3D rendering of the Hexaequo game using Three.js
  */
 
+/**
+ * ObjectPool class to manage reusable 3D objects.
+ * This reduces garbage collection and improves performance.
+ */
+class ObjectPool {
+    /**
+     * Create a new object pool
+     * @param {Function} createFunc - Function to create a new object
+     * @param {Function} resetFunc - Function to reset an object for reuse
+     * @param {number} initialSize - Initial pool size (default: 20)
+     */
+    constructor(createFunc, resetFunc, initialSize = 20) {
+        this.createFunc = createFunc;
+        this.resetFunc = resetFunc;
+        this.objects = [];
+        this.activeObjects = new Set();
+        
+        // Pre-populate the pool
+        for (let i = 0; i < initialSize; i++) {
+            this.objects.push(this.createFunc());
+        }
+    }
+    
+    /**
+     * Get an object from the pool
+     * @returns {Object} An object from the pool
+     */
+    get() {
+        let object;
+        
+        if (this.objects.length > 0) {
+            // Use an existing object
+            object = this.objects.pop();
+        } else {
+            // Create a new object if the pool is empty
+            object = this.createFunc();
+        }
+        
+        this.activeObjects.add(object);
+        return object;
+    }
+    
+    /**
+     * Return an object to the pool
+     * @param {Object} object - The object to return
+     */
+    release(object) {
+        if (this.activeObjects.has(object)) {
+            this.activeObjects.delete(object);
+            this.resetFunc(object);
+            this.objects.push(object);
+        }
+    }
+    
+    /**
+     * Release all active objects
+     */
+    releaseAll() {
+        this.activeObjects.forEach(object => {
+            this.resetFunc(object);
+            this.objects.push(object);
+        });
+        this.activeObjects.clear();
+    }
+    
+    /**
+     * Get all active objects
+     * @returns {Array} Array of active objects
+     */
+    getActiveObjects() {
+        return Array.from(this.activeObjects);
+    }
+}
+
 class Renderer {
     // Constantes de hauteur pour les éléments du jeu
     static HEIGHTS = {
@@ -47,6 +121,8 @@ class Renderer {
         this.hexHeight = 0.2; // Height of hex tiles
         this.gridSpacing = 0.9; // Spacing factor between hexagons (< 1 for overlap, 1 for touching, > 1 for gaps)
         this.hexObjects = new Map(); // Map of hex hash to 3D object
+        
+        // Track active objects
         this.validMoveIndicators = []; // Array of valid move indicator objects
         this.selectedHexIndicator = null; // Indicator for selected hex
         
@@ -73,9 +149,12 @@ class Renderer {
      * Initialize the renderer
      */
     init() {
-        // Create scene
+        // Create scene first
         this.scene = new THREE.Scene();
         this.updateSceneTheme();
+        
+        // Initialize object pools now that scene exists
+        this.initObjectPools();
         
         // Create camera
         const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
@@ -117,6 +196,154 @@ class Renderer {
         
         // Start animation loop
         this.animate();
+    }
+
+    /**
+     * Initialize object pools (called after scene creation)
+     */
+    initObjectPools() {
+        // Create or reset the object pools
+        
+        // Hex move indicators
+        this.validMoveIndicatorPool = new ObjectPool(
+            // Create function
+            () => {
+                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x00ff00,
+                    transparent: true,
+                    opacity: 0.2,
+                    roughness: 0.5,
+                    metalness: 0.5
+                });
+                const indicator = new THREE.Mesh(geometry, material);
+                indicator.rotation.y = Math.PI / 3;
+                indicator.visible = false; // Start hidden
+                this.scene.add(indicator); // Now safe to add to scene
+                return indicator;
+            },
+            // Reset function
+            (indicator) => {
+                indicator.visible = false;
+                indicator.scale.set(1, 1, 1);
+                indicator.position.set(0, 0, 0);
+            },
+            20 // Initial pool size
+        );
+        
+        // Disc indicators
+        this.discIndicatorPool = new ObjectPool(
+            // Create function for disc-shaped indicators
+            () => {
+                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.4, this.hexSize * 0.4, 0.25, 32);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x00ff00,
+                    transparent: true,
+                    opacity: 0.2,
+                    roughness: 0.5,
+                    metalness: 0.5
+                });
+                const indicator = new THREE.Mesh(geometry, material);
+                indicator.visible = false; // Start hidden
+                this.scene.add(indicator); // Now safe to add to scene
+                return indicator;
+            },
+            // Reset function
+            (indicator) => {
+                indicator.visible = false;
+                indicator.scale.set(1, 1, 1);
+                indicator.position.set(0, 0, 0);
+            },
+            10 // Initial pool size
+        );
+        
+        // Ring indicators
+        this.ringIndicatorPool = new ObjectPool(
+            // Create function for ring-shaped indicators
+            () => {
+                const outerRadius = this.hexSize * 0.6;
+                const innerRadius = this.hexSize * 0.4;
+                const shape = new THREE.Shape()
+                    .absarc(0, 0, outerRadius, 0, Math.PI * 2);
+                shape.holes.push(
+                    new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
+                );
+                const extrudeSettings = {
+                    depth: 0.25,
+                    bevelEnabled: false
+                };
+                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0x00ff00,
+                    transparent: true,
+                    opacity: 0.2,
+                    roughness: 0.5,
+                    metalness: 0.5
+                });
+                const indicator = new THREE.Mesh(geometry, material);
+                indicator.rotation.x = Math.PI / 2; // Lay the ring flat
+                indicator.visible = false; // Start hidden
+                this.scene.add(indicator); // Now safe to add to scene
+                return indicator;
+            },
+            // Reset function
+            (indicator) => {
+                indicator.visible = false;
+                indicator.scale.set(1, 1, 1);
+                indicator.position.set(0, 0, 0);
+            },
+            10 // Initial pool size
+        );
+        
+        // Selected hex indicator
+        this.selectedHexIndicatorPool = new ObjectPool(
+            // Create function
+            () => {
+                const geometry = new THREE.CylinderGeometry(this.hexSize * 1.1, this.hexSize * 1.1, 0.05, 6);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0x0088ff,
+                    transparent: true,
+                    opacity: 0.7,
+                    wireframe: true
+                });
+                const indicator = new THREE.Mesh(geometry, material);
+                indicator.rotation.y = Math.PI / 6;
+                indicator.visible = false; // Start hidden
+                this.scene.add(indicator); // Now safe to add to scene
+                return indicator;
+            },
+            // Reset function
+            (indicator) => {
+                indicator.visible = false;
+                indicator.position.set(0, 0, 0);
+            },
+            1 // Initial pool size (only need one)
+        );
+        
+        // Placement hitboxes
+        this.placementHitboxPool = new ObjectPool(
+            // Create function
+            () => {
+                const geometry = new THREE.CylinderGeometry(this.hexSize * 0.8, this.hexSize * 0.8, 0.25, 6);
+                const material = new THREE.MeshBasicMaterial({
+                    color: 0x0000ff,
+                    transparent: true,
+                    opacity: 0, // Invisible hitbox
+                    side: THREE.DoubleSide
+                });
+                const hitbox = new THREE.Mesh(geometry, material);
+                hitbox.visible = false; // Start hidden
+                this.scene.add(hitbox); // Now safe to add to scene
+                return hitbox;
+            },
+            // Reset function
+            (hitbox) => {
+                hitbox.visible = false;
+                hitbox.position.set(0, 0, 0);
+                hitbox.userData = {};
+            },
+            20 // Initial pool size
+        );
     }
 
     /**
@@ -515,7 +742,7 @@ class Renderer {
         // Create indicators for each valid move
         for (const hex of this.gameState.validMoves) {
             const position = this.hexToPosition(hex);
-            let geometry;
+            let indicator;
             let isDiscAction = false;
             let isRingAction = false;
             
@@ -524,61 +751,46 @@ class Renderer {
                 (this.gameState.selectedAction === 'movePiece' && 
                  this.gameState.selectedHex && 
                  this.gameState.grid.getCell(this.gameState.selectedHex)?.piece?.type === 'disc')) {
-                // Create a disc-shaped indicator
-                geometry = new THREE.CylinderGeometry(this.hexSize * 0.4, this.hexSize * 0.4, 0.25, 32);
+                // Use a disc-shaped indicator
+                indicator = this.discIndicatorPool.get();
                 isDiscAction = true;
             } else if (this.gameState.selectedAction === 'placeRing' ||
                      (this.gameState.selectedAction === 'movePiece' && 
                       this.gameState.selectedHex && 
                       this.gameState.grid.getCell(this.gameState.selectedHex)?.piece?.type === 'ring')) {
-                // Create a ring-shaped indicator
-                const outerRadius = this.hexSize * 0.6;
-                const innerRadius = this.hexSize * 0.4;
-                const shape = new THREE.Shape()
-                    .absarc(0, 0, outerRadius, 0, Math.PI * 2);
-                shape.holes.push(
-                    new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
-                );
-                const extrudeSettings = {
-                    depth: 0.25,
-                    bevelEnabled: false
-                };
-                geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                // Use a ring-shaped indicator
+                indicator = this.ringIndicatorPool.get();
                 isRingAction = true;
             } else {
-                // Use the original hexagonal indicator for other actions
-                geometry = new THREE.CylinderGeometry(this.hexSize * 0.95, this.hexSize * 0.95, 0.25, 6);
+                // Use a regular hexagonal indicator
+                indicator = this.validMoveIndicatorPool.get();
             }
             
-            // Create material with opacity based on checkbox state
-            const material = new THREE.MeshStandardMaterial({
-                color: 0x00ff00,
-                transparent: true,
-                opacity: opacity,
-                roughness: 0.5,
-                metalness: 0.5
-            });
-            
-            const indicator = new THREE.Mesh(geometry, material);
+            // Set opacity based on checkbox state
+            if (indicator.material) {
+                if (Array.isArray(indicator.material)) {
+                    indicator.material.forEach(mat => {
+                        mat.opacity = opacity;
+                    });
+                } else {
+                    indicator.material.opacity = opacity;
+                }
+            }
             
             // Position the indicator based on the type
             if (isDiscAction || isRingAction) {
                 indicator.position.set(position.x, this.hexHeight + (isRingAction ? 0.175 : 0.05), position.z);
-                if (isRingAction) {
-                    indicator.rotation.x = Math.PI / 2; // Lay the ring flat
-                }
             } else {
                 indicator.position.set(position.x, this.hexHeight - 0.075, position.z);
             }
             
-            if (!isRingAction) {
-                indicator.rotation.y = Math.PI / 3; // Align with tiles (except for rings)
-            }
-            
+            // Store the hex reference in userData
             indicator.userData = { isValidMoveIndicator: true, hex };
             
-            // Add to scene and track
-            this.scene.add(indicator);
+            // Make the indicator visible
+            indicator.visible = true;
+            
+            // Track the active indicator
             this.validMoveIndicators.push(indicator);
         }
     }
@@ -587,18 +799,24 @@ class Renderer {
      * Clear all valid move indicators
      */
     clearValidMoveIndicators() {
+        // Return all active indicators to their respective pools
         for (const indicator of this.validMoveIndicators) {
-            this.scene.remove(indicator);
-            
-            if (indicator.geometry) {
-                indicator.geometry.dispose();
-            }
-            
-            if (indicator.material) {
-                indicator.material.dispose();
+            // Determine which pool this indicator belongs to
+            if (indicator.geometry && indicator.geometry.type === 'CylinderGeometry') {
+                // If it's a cylinder with radius about 0.4, it's a disc
+                if (indicator.geometry.parameters.radiusTop === this.hexSize * 0.4) {
+                    this.discIndicatorPool.release(indicator);
+                } else {
+                    // Otherwise it's a regular hex indicator
+                    this.validMoveIndicatorPool.release(indicator);
+                }
+            } else if (indicator.geometry && indicator.geometry.type === 'ExtrudeGeometry') {
+                // If it's an extruded shape, it's a ring
+                this.ringIndicatorPool.release(indicator);
             }
         }
         
+        // Clear the tracking array
         this.validMoveIndicators = [];
     }
 
@@ -616,21 +834,12 @@ class Renderer {
         
         const position = this.hexToPosition(hex);
         
-        // Create indicator geometry
-        const geometry = new THREE.CylinderGeometry(this.hexSize * 1.1, this.hexSize * 1.1, 0.05, 6);
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x0088ff,
-            transparent: true,
-            opacity: 0.7,
-            wireframe: true
-        });
-        
-        const indicator = new THREE.Mesh(geometry, material);
+        // Get an indicator from the pool
+        const indicator = this.selectedHexIndicatorPool.get();
         indicator.position.set(position.x, this.hexHeight + 0.1, position.z);
-        indicator.rotation.y = Math.PI / 6;
+        indicator.visible = true;
         
-        // Add to scene and track
-        this.scene.add(indicator);
+        // Store the indicator for later reference
         this.selectedHexIndicator = indicator;
     }
 
@@ -639,16 +848,8 @@ class Renderer {
      */
     clearSelectedHexIndicator() {
         if (this.selectedHexIndicator) {
-            this.scene.remove(this.selectedHexIndicator);
-            
-            if (this.selectedHexIndicator.geometry) {
-                this.selectedHexIndicator.geometry.dispose();
-            }
-            
-            if (this.selectedHexIndicator.material) {
-                this.selectedHexIndicator.material.dispose();
-            }
-            
+            // Return the indicator to the pool
+            this.selectedHexIndicatorPool.release(this.selectedHexIndicator);
             this.selectedHexIndicator = null;
         }
     }
@@ -1195,21 +1396,14 @@ class Renderer {
         validPlacements.forEach(hex => {
             const position = this.hexToPosition(hex);
             
-            // Create a transparent cylinder as hitbox
-            const geometry = new THREE.CylinderGeometry(this.hexSize * 0.8, this.hexSize * 0.8, 0.25, 6);
-            const material = new THREE.MeshBasicMaterial({
-                color: 0x0000ff, // Bleu
-                transparent: true,
-                opacity: 0,
-                side: THREE.DoubleSide
-            });
-            
-            const hitbox = new THREE.Mesh(geometry, material);
+            // Get a hitbox from the pool
+            const hitbox = this.placementHitboxPool.get();
             hitbox.position.set(position.x, 0.125, position.z); // Slightly above the ground
             hitbox.userData = { type: 'placementHitbox', hex };
+            hitbox.visible = true;
             
+            // Store the reference
             this.placementHitboxes.set(hex.hash(), hitbox);
-            this.scene.add(hitbox);
         });
     }
 
@@ -1217,8 +1411,9 @@ class Renderer {
      * Clear all placement hitboxes
      */
     clearPlacementHitboxes() {
+        // Return all hitboxes to the pool
         this.placementHitboxes.forEach(hitbox => {
-            this.scene.remove(hitbox);
+            this.placementHitboxPool.release(hitbox);
         });
         this.placementHitboxes.clear();
     }

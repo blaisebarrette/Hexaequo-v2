@@ -4,6 +4,24 @@
  */
 
 class Renderer {
+    // Constantes de hauteur pour les éléments du jeu
+    static HEIGHTS = {
+        // Hauteurs des tuiles
+        TILE_BASE: 0,          // Hauteur de base des tuiles
+        TILE_PREVIEW: 0.5,       // Hauteur des tuiles en preview
+
+        // Hauteurs des disques
+        DISC_BASE: 0,       // Hauteur de base des disques
+        DISC_ELEVATED: 0.5,   // Hauteur des disques soulevés
+
+        // Hauteurs des anneaux
+        RING_BASE: 0,       // Hauteur de base des anneaux
+        RING_ELEVATED: 0.5,   // Hauteur des anneaux soulevés
+
+        // Hauteur des icônes UI
+        UI_ICONS: 1.5            // Hauteur des icônes au-dessus des pièces
+    };
+
     /**
      * Create a new renderer
      * @param {HTMLCanvasElement} canvas - The canvas element to render to
@@ -397,16 +415,19 @@ class Renderer {
      * @returns {THREE.Mesh} The tile mesh
      */
     createTileObject(color) {
-        // Check if we have a model for the tile
         if (this.modelLoader.isLoaded(`tile_${color}`)) {
             const model = this.modelLoader.getModel(`tile_${color}`).clone();
             model.userData = { isTile: true, color };
-            this.applyTextureScaling(model, 0.1); // Scale tile textures by 2x (making them smaller)
+            this.applyTextureScaling(model, 0.1);
             return model;
         }
         
-        // Fallback to geometry if model not available
-        const geometry = new THREE.CylinderGeometry(this.hexSize, this.hexSize, this.hexHeight, 6);
+        const geometry = new THREE.CylinderGeometry(
+            this.hexSize, 
+            this.hexSize, 
+            Renderer.HEIGHTS.TILE_BASE, 
+            6
+        );
         const material = new THREE.MeshStandardMaterial({
             color: color === 'black' ? 0x222222 : 0xffffff,
             roughness: 0.7,
@@ -414,8 +435,8 @@ class Renderer {
         });
         
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.rotation.y = Math.PI / 6; // Align flat sides with coordinate system
-        mesh.position.y = this.hexHeight / 2;
+        mesh.rotation.y = Math.PI / 6;
+        mesh.position.y = Renderer.HEIGHTS.TILE_BASE / 2;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData = { isTile: true, color };
@@ -432,35 +453,33 @@ class Renderer {
         const { type, color } = piece;
         const modelKey = `${type}_${color}`;
         
-        // Check if we have a model for this piece
         if (this.modelLoader.isLoaded(modelKey)) {
             const model = this.modelLoader.getModel(modelKey).clone();
             model.userData = { isPiece: true, type, color };
-            this.applyTextureScaling(model, 0.1); // Scale piece textures by 2x (making them smaller)
+            this.applyTextureScaling(model, 0.1);
             return model;
         }
         
-        // Fallback to geometry if model not available
         let geometry;
+        const baseHeight = type === 'disc' ? 
+            Renderer.HEIGHTS.DISC_BASE : 
+            Renderer.HEIGHTS.RING_BASE;
+        
         if (type === 'disc') {
             geometry = new THREE.CylinderGeometry(0.4, 0.4, 0.1, 32);
         } else if (type === 'ring') {
             const outerRadius = 0.4;
             const innerRadius = 0.25;
-            geometry = new THREE.RingGeometry(innerRadius, outerRadius, 32);
-            // Convert flat ring to 3D ring
+            const shape = new THREE.Shape()
+                .absarc(0, 0, outerRadius, 0, Math.PI * 2)
+                .holes.push(
+                    new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
+                );
             const extrudeSettings = {
                 depth: 0.1,
                 bevelEnabled: false
             };
-            geometry = new THREE.ExtrudeGeometry(
-                new THREE.Shape()
-                    .absarc(0, 0, outerRadius, 0, Math.PI * 2)
-                    .holes.push(
-                        new THREE.Path().absarc(0, 0, innerRadius, 0, Math.PI * 2, true)
-                    ),
-                extrudeSettings
-            );
+            geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         }
         
         const material = new THREE.MeshStandardMaterial({
@@ -470,7 +489,7 @@ class Renderer {
         });
         
         const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.y = this.hexHeight + 0.1; // Position above tile
+        mesh.position.y = baseHeight;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.userData = { isPiece: true, type, color };
@@ -964,19 +983,20 @@ class Renderer {
      * @param {string} color - Color of the preview tile
      */
     showPreviewTile(hex, color) {
-        // Remove existing preview if any
         this.clearPreviewTile();
         
-        // Create preview tile
         const tileObject = this.createTileObject(color);
         const position = this.hexToPosition(hex);
         
-        // Set position and opacity
-        tileObject.position.set(position.x, this.hexHeight + 0.5, position.z); // Position above final placement
+        tileObject.position.set(
+            position.x, 
+            Renderer.HEIGHTS.TILE_PREVIEW, 
+            position.z
+        );
+        
         tileObject.traverse((child) => {
             if (child.material) {
                 if (Array.isArray(child.material)) {
-                    // Handle multiple materials
                     child.material = child.material.map(mat => {
                         const newMat = mat.clone();
                         newMat.transparent = true;
@@ -984,7 +1004,6 @@ class Renderer {
                         return newMat;
                     });
                 } else {
-                    // Handle single material
                     child.material = child.material.clone();
                     child.material.transparent = true;
                     child.material.opacity = 0.5;
@@ -996,7 +1015,6 @@ class Renderer {
         this.previewHex = hex;
         this.scene.add(tileObject);
         
-        // Create and show confirmation UI
         this.showConfirmationUI(position);
     }
 
@@ -1038,7 +1056,7 @@ class Renderer {
         });
         const checkmark = new THREE.Sprite(checkmarkMaterial);
         checkmark.scale.set(0.7, 0.7, 1);
-        checkmark.position.set(position.x + 1.0, this.hexHeight + 1.5, position.z);
+        checkmark.position.set(position.x + 1.0, this.hexHeight + Renderer.HEIGHTS.UI_ICONS, position.z);
         checkmark.userData = { type: 'confirm' };
         
         // Create cancel sprite using data URL
@@ -1056,7 +1074,7 @@ class Renderer {
         });
         const cancel = new THREE.Sprite(cancelMaterial);
         cancel.scale.set(0.7, 0.7, 1);
-        cancel.position.set(position.x - 1.0, this.hexHeight + 1.5, position.z);
+        cancel.position.set(position.x - 1.0, this.hexHeight + Renderer.HEIGHTS.UI_ICONS, position.z);
         cancel.userData = { type: 'cancel' };
         
         // Add sprites to group
@@ -1261,7 +1279,7 @@ class Renderer {
         });
         const cancel = new THREE.Sprite(cancelMaterial);
         cancel.scale.set(0.7, 0.7, 1);
-        cancel.position.set(position.x, position.y + 1.5, position.z);
+        cancel.position.set(position.x, position.y, position.z);
         cancel.userData = { type: 'cancel' };
         
         // Add hover effect
@@ -1313,7 +1331,9 @@ class Renderer {
             if (hexObject.children) {
                 hexObject.children.forEach(child => {
                     if (child.userData && child.userData.isPiece) {
-                        const baseHeight = child.userData.type === 'disc' ? 0 : 0.2875;
+                        const baseHeight = child.userData.type === 'disc' ? 
+                            Renderer.HEIGHTS.DISC_BASE : 
+                            Renderer.HEIGHTS.RING_BASE;
                         if (child.position.y !== baseHeight) {
                             this.animatePieceElevation(child, child.position.y, baseHeight);
                         }
@@ -1328,14 +1348,15 @@ class Renderer {
             if (selectedHexObject && selectedHexObject.children) {
                 selectedHexObject.children.forEach(child => {
                     if (child.userData && child.userData.isPiece) {
-                        const baseHeight = child.userData.type === 'disc' ? 0 : 0.2875;
-                        const elevatedHeight = baseHeight + 0.5;
+                        const elevatedHeight = child.userData.type === 'disc' ? 
+                            Renderer.HEIGHTS.DISC_ELEVATED : 
+                            Renderer.HEIGHTS.RING_ELEVATED;
                         if (child.position.y !== elevatedHeight) {
                             this.animatePieceElevation(child, child.position.y, elevatedHeight);
                             // Show cancel button above the piece
                             const position = new THREE.Vector3(
                                 selectedHexObject.position.x,
-                                elevatedHeight - 0.25,
+                                this.hexHeight + Renderer.HEIGHTS.UI_ICONS,
                                 selectedHexObject.position.z
                             );
                             this.showCancelButton(position);
@@ -1344,7 +1365,6 @@ class Renderer {
                 });
             }
         } else {
-            // Clear the cancel button if no piece is selected
             this.clearConfirmationUI();
         }
     }

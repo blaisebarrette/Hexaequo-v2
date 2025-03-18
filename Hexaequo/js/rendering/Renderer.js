@@ -479,6 +479,25 @@ class Renderer {
         // Spatial partitioning for raycasting optimization
         this.spatialIndex = new SpatialIndex(2.0); // Cell size of 2.0 units
         
+        // Frustum culling
+        this.frustum = new THREE.Frustum();
+        this.frustumUpdateCounter = 0;
+        this.frustumUpdateFrequency = 5; // Update every 5 frames
+        this.cullingEnabled = true;
+        this.cullingDistance = 30; // Maximum distance to render objects
+        
+        // Performance monitoring
+        this.performanceMonitoring = {
+            enabled: false,
+            stats: null,
+            frameTime: 0,
+            frameCount: 0,
+            visibleObjects: 0,
+            totalObjects: 0,
+            lastUpdateTime: 0,
+            updateInterval: 500 // ms
+        };
+
         // Game objects
         this.hexSize = 1.0; // Size of hexagons
         this.hexHeight = 0.2; // Height of hex tiles
@@ -579,9 +598,59 @@ class Renderer {
         
         // Initialize spatial index
         this.spatialIndex = new SpatialIndex(2.0);
+
+        // Initialize frustum culling
+        this.setupFrustumCulling();
+        
+        // Setup performance monitoring
+        this.setupPerformanceMonitoring();
         
         // Start animation loop
         this.animate();
+    }
+    
+    /**
+     * Set up frustum culling
+     */
+    setupFrustumCulling() {
+        // Initialize frustum
+        this.frustum = new THREE.Frustum();
+        
+        // Expose culling settings if THREE.js GUI is available
+        if (window.dat && window.dat.GUI) {
+            const gui = new dat.GUI({ autoPlace: false });
+            const cullingFolder = gui.addFolder('Frustum Culling');
+            
+            cullingFolder.add(this, 'cullingEnabled').name('Enable Culling');
+            cullingFolder.add(this, 'cullingDistance', 10, 100).name('Culling Distance');
+            cullingFolder.add(this, 'frustumUpdateFrequency', 1, 30, 1).name('Update Every N Frames');
+            
+            cullingFolder.open();
+            
+            // Add GUI to document
+            const guiContainer = document.createElement('div');
+            guiContainer.id = 'culling-gui';
+            guiContainer.style.position = 'absolute';
+            guiContainer.style.top = '10px';
+            guiContainer.style.right = '10px';
+            guiContainer.appendChild(gui.domElement);
+            
+            // Add to settings panel if it exists, otherwise to body
+            const settingsPanel = document.getElementById('settings-modal');
+            if (settingsPanel) {
+                const settingsContent = settingsPanel.querySelector('.modal-content');
+                if (settingsContent) {
+                    settingsContent.appendChild(guiContainer);
+                } else {
+                    document.body.appendChild(guiContainer);
+                }
+            } else {
+                document.body.appendChild(guiContainer);
+            }
+        }
+        
+        // Set initial frustum
+        this.updateFrustumCulling();
     }
 
     /**
@@ -821,6 +890,11 @@ class Renderer {
         // Update renderer size
         this.renderer.setSize(width, height, false);
         
+        // Update frustum culling since the camera parameters changed
+        if (this.cullingEnabled) {
+            this.updateFrustumCulling();
+        }
+        
         // Force a re-render
         this.renderer.render(this.scene, this.camera);
     }
@@ -831,8 +905,20 @@ class Renderer {
     animate() {
         requestAnimationFrame(() => this.animate());
         
+        // Start measuring performance if enabled
+        if (this.performanceMonitoring.enabled && this.performanceMonitoring.stats) {
+            this.performanceMonitoring.stats.begin();
+        }
+        
         // Update controls
         this.controls.update();
+
+        // Update frustum culling periodically to avoid doing it every frame
+        this.frustumUpdateCounter++;
+        if (this.cullingEnabled && this.frustumUpdateCounter >= this.frustumUpdateFrequency) {
+            this.updateFrustumCulling();
+            this.frustumUpdateCounter = 0;
+        }
         
         // Update animations
         const delta = this.clock.getDelta();
@@ -842,6 +928,147 @@ class Renderer {
         
         // Render scene
         this.renderer.render(this.scene, this.camera);
+        
+        // Update performance stats if enabled
+        this.updatePerformanceStats();
+        
+        // End performance measurement
+        if (this.performanceMonitoring.enabled && this.performanceMonitoring.stats) {
+            this.performanceMonitoring.stats.end();
+        }
+    }
+
+    /**
+     * Update frustum culling to hide objects outside camera view
+     */
+    updateFrustumCulling() {
+        // Calculate the current view frustum
+        this.frustum.setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(
+                this.camera.projectionMatrix,
+                this.camera.matrixWorldInverse
+            )
+        );
+
+        // Get camera position
+        const cameraPosition = new THREE.Vector3();
+        this.camera.getWorldPosition(cameraPosition);
+
+        // Check each hex object against the frustum
+        for (const [_, hexGroup] of this.hexObjects) {
+            if (!hexGroup) continue;
+
+            // Calculate distance from camera to object
+            const distance = cameraPosition.distanceTo(hexGroup.position);
+            
+            // Skip objects too far away
+            if (distance > this.cullingDistance) {
+                hexGroup.visible = false;
+                continue;
+            }
+
+            // Create a bounding sphere for the hex group
+            if (!hexGroup.boundingSphere) {
+                hexGroup.boundingSphere = new THREE.Sphere(
+                    hexGroup.position.clone(),
+                    this.hexSize * 1.5 // Slightly larger than the hex
+                );
+            } else {
+                hexGroup.boundingSphere.center.copy(hexGroup.position);
+            }
+
+            // Check if the object is in the camera's view frustum
+            hexGroup.visible = this.frustum.intersectsSphere(hexGroup.boundingSphere);
+        }
+
+        // Also apply culling to indicators
+        for (const indicator of this.validMoveIndicators) {
+            if (!indicator) continue;
+
+            // Calculate distance from camera to indicator
+            const distance = cameraPosition.distanceTo(indicator.position);
+            
+            // Skip indicators too far away
+            if (distance > this.cullingDistance) {
+                indicator.visible = false;
+                continue;
+            }
+
+            // Create a bounding sphere for the indicator
+            if (!indicator.boundingSphere) {
+                indicator.boundingSphere = new THREE.Sphere(
+                    indicator.position.clone(),
+                    this.hexSize * 0.5
+                );
+            } else {
+                indicator.boundingSphere.center.copy(indicator.position);
+            }
+
+            // Check if the indicator is in the camera's view frustum
+            const isVisible = this.frustum.intersectsSphere(indicator.boundingSphere);
+            
+            // Only update visibility if the indicator should be visible based on game logic
+            if (indicator.userData.isValidMoveIndicator) {
+                indicator.visible = isVisible && indicator.userData.shouldBeVisible !== false;
+            }
+        }
+
+        // Always ensure UI elements like confirmation buttons are visible
+        if (this.confirmationUI) {
+            this.confirmationUI.children.forEach(child => {
+                child.visible = true;
+            });
+        }
+
+        // Always ensure preview tile is visible
+        if (this.previewTile && this.previewTile.visible) {
+            this.previewTile.visible = true;
+        }
+
+        // Always ensure selected hex indicator is visible
+        if (this.selectedHexIndicator) {
+            this.selectedHexIndicator.visible = true;
+        }
+    }
+
+    /**
+     * Toggle frustum culling on/off
+     * @param {boolean} enabled - Whether culling should be enabled
+     */
+    setFrustumCulling(enabled) {
+        this.cullingEnabled = enabled;
+        
+        // If turning off culling, make all objects visible again
+        if (!enabled) {
+            for (const [_, hexGroup] of this.hexObjects) {
+                if (hexGroup) hexGroup.visible = true;
+            }
+            
+            for (const indicator of this.validMoveIndicators) {
+                if (indicator && indicator.userData.shouldBeVisible !== false) {
+                    indicator.visible = true;
+                }
+            }
+        } else {
+            // Immediately update culling when turning it on
+            this.updateFrustumCulling();
+        }
+        
+        // Update performance stats
+        this.updatePerformanceStats();
+    }
+
+    /**
+     * Set the culling distance
+     * @param {number} distance - Maximum distance to render objects
+     */
+    setCullingDistance(distance) {
+        this.cullingDistance = distance;
+        
+        // Update culling immediately if enabled
+        if (this.cullingEnabled) {
+            this.updateFrustumCulling();
+        }
     }
 
     /**
@@ -1200,10 +1427,10 @@ class Renderer {
             }
             
             // Store the hex reference in userData
-            indicator.userData = { isValidMoveIndicator: true, hex };
+            indicator.userData = { isValidMoveIndicator: true, hex, shouldBeVisible: true };
             
-            // Make the indicator visible
-            indicator.visible = true;
+            // Make the indicator visible (but respect frustum culling)
+            indicator.visible = !this.cullingEnabled || true;
             
             // Add to spatial index for raycasting
             const radius = isDiscAction || isRingAction ? this.hexSize * 0.4 : this.hexSize * 0.95;
@@ -1211,6 +1438,11 @@ class Renderer {
             
             // Track the active indicator
             this.validMoveIndicators.push(indicator);
+        }
+        
+        // Update frustum culling immediately if enabled
+        if (this.cullingEnabled) {
+            this.updateFrustumCulling();
         }
     }
 
@@ -1290,6 +1522,11 @@ class Renderer {
         // Smoothly transition the camera target
         const targetPosition = new THREE.Vector3(position.x, 0, position.z);
         this.controls.target.lerp(targetPosition, 0.1);
+        
+        // Update frustum culling immediately when camera target changes
+        if (this.cullingEnabled) {
+            this.updateFrustumCulling();
+        }
     }
 
     /**
@@ -2059,6 +2296,90 @@ class Renderer {
                 this.canvas.removeEventListener('mousemove', onMouseMove);
             }
         };
+    }
+
+    /**
+     * Set up performance monitoring
+     */
+    setupPerformanceMonitoring() {
+        // Create stats display if Stats.js is available
+        if (window.Stats) {
+            this.performanceMonitoring.stats = new Stats();
+            this.performanceMonitoring.stats.dom.style.position = 'absolute';
+            this.performanceMonitoring.stats.dom.style.top = '0px';
+            this.performanceMonitoring.stats.dom.style.left = '0px';
+            document.body.appendChild(this.performanceMonitoring.stats.dom);
+            
+            // Create custom panel for culling stats
+            const cullingPanel = new Stats.Panel('Visible/Total', '#0ff', '#002');
+            this.performanceMonitoring.stats.addPanel(cullingPanel);
+            this.performanceMonitoring.cullingPanel = cullingPanel;
+            
+            // Show the FPS panel by default
+            this.performanceMonitoring.stats.showPanel(0);
+            
+            // Enable performance monitoring
+            this.performanceMonitoring.enabled = true;
+        }
+        
+        // Add controls to toggle performance monitoring if dat.GUI is available
+        if (window.dat && window.dat.GUI && this.performanceMonitoring.stats) {
+            const guiContainer = document.getElementById('culling-gui');
+            if (guiContainer) {
+                const gui = guiContainer.querySelector('.dg.main');
+                if (gui && gui.__folders && gui.__folders['Frustum Culling']) {
+                    const folder = gui.__folders['Frustum Culling'];
+                    folder.add(this.performanceMonitoring, 'enabled').name('Show Stats');
+                }
+            }
+        }
+    }
+
+    /**
+     * Update performance monitoring stats
+     */
+    updatePerformanceStats() {
+        if (!this.performanceMonitoring.enabled || !this.performanceMonitoring.stats) {
+            return;
+        }
+        
+        // Update the main stats (FPS)
+        this.performanceMonitoring.stats.update();
+        
+        // Only update detailed stats periodically to avoid performance impact
+        const now = performance.now();
+        if (now - this.performanceMonitoring.lastUpdateTime < this.performanceMonitoring.updateInterval) {
+            return;
+        }
+        this.performanceMonitoring.lastUpdateTime = now;
+        
+        // Count visible objects
+        let visibleObjects = 0;
+        let totalObjects = 0;
+        
+        // Count hex objects
+        for (const [_, obj] of this.hexObjects) {
+            totalObjects++;
+            if (obj.visible) visibleObjects++;
+        }
+        
+        // Count valid move indicators
+        totalObjects += this.validMoveIndicators.length;
+        for (const indicator of this.validMoveIndicators) {
+            if (indicator.visible) visibleObjects++;
+        }
+        
+        // Store counts
+        this.performanceMonitoring.visibleObjects = visibleObjects;
+        this.performanceMonitoring.totalObjects = totalObjects;
+        
+        // Update custom panel if available
+        if (this.performanceMonitoring.cullingPanel) {
+            this.performanceMonitoring.cullingPanel.update(
+                visibleObjects, 
+                totalObjects
+            );
+        }
     }
 }
 

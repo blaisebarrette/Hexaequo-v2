@@ -105,6 +105,37 @@ class MaterialCache {
     }
     
     /**
+     * Preload common materials used in the game
+     * This reduces material creation during gameplay
+     */
+    preloadCommonMaterials() {
+        // Preload standard materials for tiles
+        this.getStandardMaterial({ color: 0x222222, roughness: 0.7, metalness: 0.2 }); // Black tile
+        this.getStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.2 }); // White tile
+        
+        // Preload standard materials for pieces
+        this.getStandardMaterial({ color: 0x222222, roughness: 0.5, metalness: 0.5 }); // Black piece
+        this.getStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.5 }); // White piece
+        
+        // Preload materials for indicators
+        this.getStandardMaterial({ color: 0x00ff00, transparent: true, opacity: 0.2 }); // Valid move indicator
+        this.getBasicMaterial({ color: 0x0088ff, opacity: 0.7, wireframe: true }); // Selected hex
+        this.getBasicMaterial({ color: 0x0000ff, opacity: 0, side: THREE.DoubleSide }); // Hitbox
+        
+        // Preload common geometries
+        this.getHexagonGeometry(1.0, 0.2); // Standard hex tile
+        this.getHexagonGeometry(0.95, 0.25); // Move indicator
+        this.getHexagonGeometry(1.1, 0.05); // Selected hex indicator
+        this.getHexagonGeometry(0.8, 0.25); // Hitbox
+        this.getCylinderGeometry(0.4, 0.1, 32); // Disc
+        
+        // Log cache statistics
+        const materialCount = this.materials.size;
+        const textureCount = this.textures.size;
+        const geometryCount = this.geometries.size;
+    }
+    
+    /**
      * Get or create a MeshStandardMaterial
      * @param {Object} params - Material parameters
      * @returns {THREE.MeshStandardMaterial} The cached or new material
@@ -463,8 +494,22 @@ class Renderer {
         this.previewHex = null; // Current hex where preview is shown
         this.confirmationUI = null; // Group containing confirmation UI elements
         
+        // Cached preview tiles
+        this.cachedPreviewTiles = {
+            black: null,
+            white: null
+        };
+        
         // Valid placement hitboxes
         this.placementHitboxes = new Map(); // Map of hex hash to hitbox object
+        
+        // Cached UI elements
+        this.cachedUIElements = {
+            checkmark: null,
+            cancel: null,
+            confirmMaterial: null,
+            cancelMaterial: null
+        };
         
         // Lighting
         this.lights = [];
@@ -485,8 +530,14 @@ class Renderer {
         this.scene = new THREE.Scene();
         this.updateSceneTheme();
         
+        // Preload common materials to improve performance
+        this.materialCache.preloadCommonMaterials();
+        
         // Initialize object pools now that scene exists
         this.initObjectPools();
+        
+        // Pre-generate UI elements
+        this.preGenerateUIElements();
         
         // Create camera
         const aspect = this.canvas.clientWidth / this.canvas.clientHeight;
@@ -552,6 +603,8 @@ class Renderer {
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.rotation.y = Math.PI / 3;
                 indicator.visible = false; // Start hidden
+                // Add a collision mesh for better raycasting
+                indicator.userData = { isIndicator: true };
                 this.scene.add(indicator); // Now safe to add to scene
                 return indicator;
             },
@@ -576,6 +629,7 @@ class Renderer {
                 });
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.visible = false; // Start hidden
+                indicator.userData = { isIndicator: true };
                 this.scene.add(indicator); // Now safe to add to scene
                 return indicator;
             },
@@ -612,6 +666,7 @@ class Renderer {
                 const indicator = new THREE.Mesh(geometry, material);
                 indicator.rotation.x = Math.PI / 2; // Lay the ring flat
                 indicator.visible = false; // Start hidden
+                indicator.userData = { isIndicator: true };
                 this.scene.add(indicator); // Now safe to add to scene
                 return indicator;
             },
@@ -1150,6 +1205,10 @@ class Renderer {
             // Make the indicator visible
             indicator.visible = true;
             
+            // Add to spatial index for raycasting
+            const radius = isDiscAction || isRingAction ? this.hexSize * 0.4 : this.hexSize * 0.95;
+            this.spatialIndex.addObject(indicator, position, radius);
+            
             // Track the active indicator
             this.validMoveIndicators.push(indicator);
         }
@@ -1161,6 +1220,9 @@ class Renderer {
     clearValidMoveIndicators() {
         // Return all active indicators to their respective pools
         for (const indicator of this.validMoveIndicators) {
+            // Remove from spatial index
+            this.spatialIndex.removeObject(indicator);
+            
             // Determine which pool this indicator belongs to
             if (indicator.geometry && indicator.geometry.type === 'CylinderGeometry') {
                 // If it's a cylinder with radius about 0.4, it's a disc
@@ -1339,6 +1401,15 @@ class Renderer {
         if (hitboxIntersects.length > 0) {
             const hitbox = hitboxIntersects[0].object;
             return hitbox.userData.hex;
+        }
+        
+        // Check for valid move indicator intersections
+        if (this.validMoveIndicators.length > 0) {
+            const validMoveIntersects = this.raycaster.intersectObjects(this.validMoveIndicators);
+            if (validMoveIntersects.length > 0) {
+                const indicator = validMoveIntersects[0].object;
+                return indicator.userData.hex;
+            }
         }
         
         // Then check for hex intersections in the potential objects
@@ -1543,56 +1614,83 @@ class Renderer {
     }
 
     /**
-     * Show a preview tile at the specified hex
-     * @param {Hex} hex - The hex to show the preview at
-     * @param {string} color - Color of the preview tile
+     * Pre-generate and cache UI elements
+     * This improves performance by creating UI elements once during initialization
+     * instead of recreating them each time they're needed
      */
-    showPreviewTile(hex, color) {
-        this.clearPreviewTile();
+    preGenerateUIElements() {
+        // Create and cache UI textures
+        const uiTextures = this.createUITextures();
         
-        const tileObject = this.createTileObject(color);
-        const position = this.hexToPosition(hex);
-        
-        tileObject.position.set(
-            position.x, 
-            Renderer.HEIGHTS.TILE_PREVIEW, 
-            position.z
-        );
-        
-        tileObject.traverse((child) => {
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    child.material = child.material.map(mat => {
-                        const newMat = mat.clone();
-                        newMat.transparent = true;
-                        newMat.opacity = 0.5;
-                        return newMat;
-                    });
-                } else {
-                    child.material = child.material.clone();
-                    child.material.transparent = true;
-                    child.material.opacity = 0.5;
-                }
-            }
+        // Create and cache checkmark material
+        this.cachedUIElements.confirmMaterial = new THREE.SpriteMaterial({ 
+            map: uiTextures.checkmark,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false
         });
         
-        this.previewTile = tileObject;
-        this.previewHex = hex;
-        this.scene.add(tileObject);
+        // Create and cache cancel material
+        this.cachedUIElements.cancelMaterial = new THREE.SpriteMaterial({ 
+            map: uiTextures.cancel,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false
+        });
         
-        this.showConfirmationUI(position);
+        // Create checkmark sprite
+        this.cachedUIElements.checkmark = new THREE.Sprite(this.cachedUIElements.confirmMaterial);
+        this.cachedUIElements.checkmark.scale.set(0.7, 0.7, 1);
+        this.cachedUIElements.checkmark.visible = false;
+        this.cachedUIElements.checkmark.userData = { type: 'confirm' };
+        this.scene.add(this.cachedUIElements.checkmark);
+        
+        // Create cancel sprite
+        this.cachedUIElements.cancel = new THREE.Sprite(this.cachedUIElements.cancelMaterial);
+        this.cachedUIElements.cancel.scale.set(0.7, 0.7, 1);
+        this.cachedUIElements.cancel.visible = false;
+        this.cachedUIElements.cancel.userData = { type: 'cancel' };
+        this.scene.add(this.cachedUIElements.cancel);
+        
+        // Pre-generate preview tiles for both colors
+        this.preGeneratePreviewTiles();
     }
-
+    
     /**
-     * Clear the preview tile and confirmation UI
+     * Pre-generate and cache preview tiles for both colors
      */
-    clearPreviewTile() {
-        if (this.previewTile) {
-            this.scene.remove(this.previewTile);
-            this.previewTile = null;
-            this.previewHex = null;
-        }
-        this.clearConfirmationUI();
+    preGeneratePreviewTiles() {
+        // Create black preview tile
+        this.cachedPreviewTiles.black = this.createTileObject('black');
+        this.cachedPreviewTiles.black.visible = false;
+        
+        // Create white preview tile
+        this.cachedPreviewTiles.white = this.createTileObject('white');
+        this.cachedPreviewTiles.white.visible = false;
+        
+        // Make materials transparent for preview
+        ['black', 'white'].forEach(color => {
+            const tile = this.cachedPreviewTiles[color];
+            tile.traverse((child) => {
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material = child.material.map(mat => {
+                            const newMat = mat.clone();
+                            newMat.transparent = true;
+                            newMat.opacity = 0.5;
+                            return newMat;
+                        });
+                    } else {
+                        child.material = child.material.clone();
+                        child.material.transparent = true;
+                        child.material.opacity = 0.5;
+                    }
+                }
+            });
+            
+            // Add to scene so it's ready to be shown
+            this.scene.add(tile);
+        });
     }
 
     /**
@@ -1623,6 +1721,49 @@ class Renderer {
     }
 
     /**
+     * Show a preview tile at the specified hex
+     * @param {Hex} hex - The hex to show the preview at
+     * @param {string} color - Color of the preview tile
+     */
+    showPreviewTile(hex, color) {
+        this.clearPreviewTile();
+        
+        // Use cached preview tile
+        const previewTile = this.cachedPreviewTiles[color];
+        const position = this.hexToPosition(hex);
+        
+        // Position the tile
+        previewTile.position.set(
+            position.x, 
+            Renderer.HEIGHTS.TILE_PREVIEW, 
+            position.z
+        );
+        
+        // Make it visible
+        previewTile.visible = true;
+        
+        // Store references
+        this.previewTile = previewTile;
+        this.previewHex = hex;
+        
+        // Show confirmation UI
+        this.showConfirmationUI(position);
+    }
+
+    /**
+     * Clear the preview tile and confirmation UI
+     */
+    clearPreviewTile() {
+        if (this.previewTile) {
+            // Hide the preview tile instead of removing it
+            this.previewTile.visible = false;
+            this.previewTile = null;
+            this.previewHex = null;
+        }
+        this.clearConfirmationUI();
+    }
+
+    /**
      * Show confirmation UI elements
      * @param {Object} position - Position to show the UI at
      */
@@ -1633,32 +1774,16 @@ class Renderer {
         // Create a group for the UI elements
         const uiGroup = new THREE.Group();
         
-        // Get or create UI textures
-        const uiTextures = this.createUITextures();
-        
-        // Create checkmark sprite
-        const checkmarkMaterial = new THREE.SpriteMaterial({ 
-            map: uiTextures.checkmark,
-            transparent: true,
-            opacity: 0.9,
-            depthTest: false // Ensure UI is always visible
-        });
-        const checkmark = new THREE.Sprite(checkmarkMaterial);
-        checkmark.scale.set(0.7, 0.7, 1);
+        // Use the cached sprites and position them
+        const checkmark = this.cachedUIElements.checkmark;
         checkmark.position.set(position.x + 1.0, this.hexHeight + Renderer.HEIGHTS.UI_ICONS, position.z);
-        checkmark.userData = { type: 'confirm' };
+        checkmark.visible = true;
+        checkmark.scale.set(0.7, 0.7, 1); // Reset scale
         
-        // Create cancel sprite
-        const cancelMaterial = new THREE.SpriteMaterial({ 
-            map: uiTextures.cancel,
-            transparent: true,
-            opacity: 0.9,
-            depthTest: false // Ensure UI is always visible
-        });
-        const cancel = new THREE.Sprite(cancelMaterial);
-        cancel.scale.set(0.7, 0.7, 1);
+        const cancel = this.cachedUIElements.cancel;
         cancel.position.set(position.x - 1.0, this.hexHeight + Renderer.HEIGHTS.UI_ICONS, position.z);
-        cancel.userData = { type: 'cancel' };
+        cancel.visible = true;
+        cancel.scale.set(0.7, 0.7, 1); // Reset scale
         
         // Add sprites to group
         uiGroup.add(checkmark);
@@ -1709,6 +1834,15 @@ class Renderer {
             if (this.confirmationUI.userData && this.confirmationUI.userData.cleanup) {
                 this.confirmationUI.userData.cleanup();
             }
+            
+            // Hide the sprites instead of removing them
+            if (this.cachedUIElements.checkmark) {
+                this.cachedUIElements.checkmark.visible = false;
+            }
+            if (this.cachedUIElements.cancel) {
+                this.cachedUIElements.cancel.visible = false;
+            }
+            
             this.scene.remove(this.confirmationUI);
             this.confirmationUI = null;
         }
@@ -1824,70 +1958,6 @@ class Renderer {
     }
 
     /**
-     * Show cancel button above a selected piece
-     * @param {THREE.Vector3} position - The position to show the button at
-     */
-    showCancelButton(position) {
-        // Remove existing UI if any
-        this.clearConfirmationUI();
-        
-        // Create a group for the UI elements
-        const uiGroup = new THREE.Group();
-        
-        // Get or create UI textures
-        const uiTextures = this.createUITextures();
-        
-        // Create cancel sprite
-        const cancelMaterial = new THREE.SpriteMaterial({ 
-            map: uiTextures.cancel,
-            transparent: true,
-            opacity: 0.9,
-            depthTest: false // Ensure UI is always visible
-        });
-        const cancel = new THREE.Sprite(cancelMaterial);
-        cancel.scale.set(0.7, 0.7, 1);
-        cancel.position.set(position.x, position.y, position.z);
-        cancel.userData = { type: 'cancel' };
-        
-        // Add hover effect
-        const onMouseMove = (event) => {
-            const rect = this.canvas.getBoundingClientRect();
-            this.mouse.x = ((event.clientX - rect.left) / this.canvas.clientWidth) * 2 - 1;
-            this.mouse.y = -((event.clientY - rect.top) / this.canvas.clientHeight) * 2 + 1;
-            
-            this.raycaster.setFromCamera(this.mouse, this.camera);
-            const intersects = this.raycaster.intersectObjects([cancel]);
-            
-            // Reset scale
-            cancel.scale.set(0.7, 0.7, 1);
-            
-            if (intersects.length > 0) {
-                // Enlarge hovered sprite
-                cancel.scale.set(0.8, 0.8, 1);
-                this.canvas.style.cursor = 'pointer';
-            } else {
-                this.canvas.style.cursor = 'default';
-            }
-        };
-        
-        this.canvas.addEventListener('mousemove', onMouseMove);
-        
-        // Add sprite to group
-        uiGroup.add(cancel);
-        
-        this.confirmationUI = uiGroup;
-        this.scene.add(uiGroup);
-        
-        // Store the event listener for cleanup
-        this.confirmationUI.userData = { 
-            ...this.confirmationUI.userData,
-            cleanup: () => {
-                this.canvas.removeEventListener('mousemove', onMouseMove);
-            }
-        };
-    }
-
-    /**
      * Update the elevation of the selected piece
      */
     updateSelectedPieceElevation() {
@@ -1934,6 +2004,61 @@ class Renderer {
         } else {
             this.clearConfirmationUI();
         }
+    }
+
+    /**
+     * Show cancel button above a selected piece
+     * @param {THREE.Vector3} position - The position to show the button at
+     */
+    showCancelButton(position) {
+        // Remove existing UI if any
+        this.clearConfirmationUI();
+        
+        // Create a group for the UI elements
+        const uiGroup = new THREE.Group();
+        
+        // Use the cached cancel sprite
+        const cancel = this.cachedUIElements.cancel;
+        cancel.position.set(position.x, position.y, position.z);
+        cancel.visible = true;
+        cancel.scale.set(0.7, 0.7, 1); // Reset scale
+        
+        // Add hover effect
+        const onMouseMove = (event) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mouse.x = ((event.clientX - rect.left) / this.canvas.clientWidth) * 2 - 1;
+            this.mouse.y = -((event.clientY - rect.top) / this.canvas.clientHeight) * 2 + 1;
+            
+            this.raycaster.setFromCamera(this.mouse, this.camera);
+            const intersects = this.raycaster.intersectObjects([cancel]);
+            
+            // Reset scale
+            cancel.scale.set(0.7, 0.7, 1);
+            
+            if (intersects.length > 0) {
+                // Enlarge hovered sprite
+                cancel.scale.set(0.8, 0.8, 1);
+                this.canvas.style.cursor = 'pointer';
+            } else {
+                this.canvas.style.cursor = 'default';
+            }
+        };
+        
+        this.canvas.addEventListener('mousemove', onMouseMove);
+        
+        // Add sprite to group
+        uiGroup.add(cancel);
+        
+        this.confirmationUI = uiGroup;
+        this.scene.add(uiGroup);
+        
+        // Store the event listener for cleanup
+        this.confirmationUI.userData = { 
+            ...this.confirmationUI.userData,
+            cleanup: () => {
+                this.canvas.removeEventListener('mousemove', onMouseMove);
+            }
+        };
     }
 }
 

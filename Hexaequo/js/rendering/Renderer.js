@@ -238,6 +238,171 @@ class MaterialCache {
     }
 }
 
+/**
+ * SpatialIndex class to optimize raycast operations through spatial partitioning.
+ * This improves performance by reducing the number of objects tested for intersection.
+ */
+class SpatialIndex {
+    /**
+     * Create a new spatial index
+     * @param {number} cellSize - Size of each cell in the spatial grid (default: 2.0)
+     */
+    constructor(cellSize = 2.0) {
+        this.cellSize = cellSize;
+        this.cells = new Map(); // Maps cell coordinates to arrays of objects
+        this.objectCells = new Map(); // Maps objects to the cells they occupy
+    }
+    
+    /**
+     * Get the cell key for a position
+     * @param {number} x - X coordinate
+     * @param {number} z - Z coordinate
+     * @returns {string} Cell key in the format "x,z"
+     * @private
+     */
+    _getCellKey(x, z) {
+        const cellX = Math.floor(x / this.cellSize);
+        const cellZ = Math.floor(z / this.cellSize);
+        return `${cellX},${cellZ}`;
+    }
+    
+    /**
+     * Add an object to the spatial index
+     * @param {THREE.Object3D} object - The object to add
+     * @param {THREE.Vector3} position - The object's position
+     * @param {number} radius - The object's bounding radius
+     */
+    addObject(object, position, radius = 1.0) {
+        // Calculate the cells this object occupies based on its position and radius
+        const minCellX = Math.floor((position.x - radius) / this.cellSize);
+        const maxCellX = Math.floor((position.x + radius) / this.cellSize);
+        const minCellZ = Math.floor((position.z - radius) / this.cellSize);
+        const maxCellZ = Math.floor((position.z + radius) / this.cellSize);
+        
+        const occupiedCells = [];
+        
+        // Add the object to each cell it occupies
+        for (let x = minCellX; x <= maxCellX; x++) {
+            for (let z = minCellZ; z <= maxCellZ; z++) {
+                const cellKey = `${x},${z}`;
+                occupiedCells.push(cellKey);
+                
+                if (!this.cells.has(cellKey)) {
+                    this.cells.set(cellKey, []);
+                }
+                
+                this.cells.get(cellKey).push(object);
+            }
+        }
+        
+        // Remember which cells this object occupies
+        this.objectCells.set(object.uuid, occupiedCells);
+    }
+    
+    /**
+     * Remove an object from the spatial index
+     * @param {THREE.Object3D} object - The object to remove
+     */
+    removeObject(object) {
+        const cellKeys = this.objectCells.get(object.uuid);
+        
+        if (!cellKeys) return;
+        
+        // Remove the object from each cell it occupies
+        cellKeys.forEach(cellKey => {
+            const cell = this.cells.get(cellKey);
+            
+            if (cell) {
+                const index = cell.indexOf(object);
+                
+                if (index !== -1) {
+                    cell.splice(index, 1);
+                }
+                
+                // Clean up empty cells
+                if (cell.length === 0) {
+                    this.cells.delete(cellKey);
+                }
+            }
+        });
+        
+        // Remove the object's record
+        this.objectCells.delete(object.uuid);
+    }
+    
+    /**
+     * Update an object's position in the spatial index
+     * @param {THREE.Object3D} object - The object to update
+     * @param {THREE.Vector3} position - The object's new position
+     * @param {number} radius - The object's bounding radius
+     */
+    updateObject(object, position, radius = 1.0) {
+        this.removeObject(object);
+        this.addObject(object, position, radius);
+    }
+    
+    /**
+     * Get all objects near a position that might intersect with a ray
+     * @param {THREE.Vector3} position - The position to check
+     * @param {number} radius - The radius to check around the position
+     * @returns {Array} Array of objects near the position
+     */
+    getObjectsNear(position, radius = 1.0) {
+        const minCellX = Math.floor((position.x - radius) / this.cellSize);
+        const maxCellX = Math.floor((position.x + radius) / this.cellSize);
+        const minCellZ = Math.floor((position.z - radius) / this.cellSize);
+        const maxCellZ = Math.floor((position.z + radius) / this.cellSize);
+        
+        const objects = new Set();
+        
+        // Gather objects from all cells in range
+        for (let x = minCellX; x <= maxCellX; x++) {
+            for (let z = minCellZ; z <= maxCellZ; z++) {
+                const cellKey = `${x},${z}`;
+                const cell = this.cells.get(cellKey);
+                
+                if (cell) {
+                    cell.forEach(object => objects.add(object));
+                }
+            }
+        }
+        
+        return Array.from(objects);
+    }
+    
+    /**
+     * Get all objects that a ray might intersect based on its origin and direction
+     * @param {THREE.Ray} ray - The ray to check
+     * @param {number} maxDistance - Maximum distance along the ray to check
+     * @returns {Array} Array of objects that might intersect with the ray
+     */
+    getObjectsAlongRay(ray, maxDistance = 100) {
+        const origin = ray.origin;
+        const direction = ray.direction;
+        
+        // Start with objects near the ray origin
+        const objects = new Set(this.getObjectsNear(origin, this.cellSize));
+        
+        // Sample points along the ray to gather objects
+        const steps = Math.ceil(maxDistance / this.cellSize);
+        const stepSize = maxDistance / steps;
+        
+        for (let i = 1; i <= steps; i++) {
+            const distance = i * stepSize;
+            const pointOnRay = new THREE.Vector3(
+                origin.x + direction.x * distance,
+                origin.y + direction.y * distance,
+                origin.z + direction.z * distance
+            );
+            
+            // Add objects from this cell
+            this.getObjectsNear(pointOnRay, this.cellSize).forEach(object => objects.add(object));
+        }
+        
+        return Array.from(objects);
+    }
+}
+
 class Renderer {
     // Constantes de hauteur pour les éléments du jeu
     static HEIGHTS = {
@@ -279,6 +444,9 @@ class Renderer {
         
         // Resource caching
         this.materialCache = new MaterialCache();
+        
+        // Spatial partitioning for raycasting optimization
+        this.spatialIndex = new SpatialIndex(2.0); // Cell size of 2.0 units
         
         // Game objects
         this.hexSize = 1.0; // Size of hexagons
@@ -357,6 +525,9 @@ class Renderer {
         
         // Listen for theme changes
         this.setupThemeListener();
+        
+        // Initialize spatial index
+        this.spatialIndex = new SpatialIndex(2.0);
         
         // Start animation loop
         this.animate();
@@ -624,6 +795,12 @@ class Renderer {
      */
     setGameState(gameState) {
         this.gameState = gameState;
+        
+        // If the game state is not empty, update the board and rebuild the spatial index
+        if (gameState && gameState.grid) {
+            this.updateBoard();
+            this.rebuildSpatialIndex();
+        }
     }
 
     /**
@@ -654,6 +831,24 @@ class Renderer {
         
         // Update selected piece elevation
         this.updateSelectedPieceElevation();
+    }
+
+    /**
+     * Rebuild the spatial index from the current hex objects
+     */
+    rebuildSpatialIndex() {
+        // Clear the spatial index
+        this.spatialIndex = new SpatialIndex(2.0);
+        
+        // Add all hex objects to the spatial index
+        for (const [hexHash, hexGroup] of this.hexObjects) {
+            // Compute the position from the hex coordinates
+            const hex = hexGroup.userData.hex;
+            const position = this.hexToPosition(hex);
+            
+            // Add to spatial index
+            this.spatialIndex.addObject(hexGroup, position, this.hexSize);
+        }
     }
 
     /**
@@ -689,6 +884,11 @@ class Renderer {
         for (const hexHash of existingHexes) {
             this.removeHexObject(hexHash);
         }
+        
+        // Rebuild the spatial index if significant changes were made
+        if (existingHexes.size > 0 || cells.length !== this.hexObjects.size) {
+            this.rebuildSpatialIndex();
+        }
     }
 
     /**
@@ -718,6 +918,9 @@ class Renderer {
         // Add to scene and track
         this.scene.add(hexGroup);
         this.hexObjects.set(hexHash, hexGroup);
+        
+        // Add to spatial index for raycasting optimization
+        this.spatialIndex.addObject(hexGroup, position, this.hexSize);
     }
 
     /**
@@ -759,6 +962,8 @@ class Renderer {
             // Remove piece if it shouldn't be there
             hexGroup.remove(existingPiece);
         }
+        
+        // No need to update spatial index since position hasn't changed
     }
 
     /**
@@ -769,6 +974,9 @@ class Renderer {
         const hexGroup = this.hexObjects.get(hexHash);
         
         if (hexGroup) {
+            // Remove from spatial index
+            this.spatialIndex.removeObject(hexGroup);
+            
             // Remove from scene
             this.scene.remove(hexGroup);
             
@@ -1065,8 +1273,11 @@ class Renderer {
         // Update the picking ray with the camera and mouse position
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // Calculate objects intersecting the picking ray
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+        // Use spatial partitioning to get potential objects along the ray
+        const potentialObjects = this.spatialIndex.getObjectsAlongRay(this.raycaster.ray, 100);
+        
+        // Calculate intersections with the potential objects
+        const intersects = this.raycaster.intersectObjects(potentialObjects, true);
         
         // Reset cursor
         this.canvas.style.cursor = 'default';
@@ -1099,36 +1310,39 @@ class Renderer {
         this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         
-        console.log('Click detected at:', { x: this.mouse.x, y: this.mouse.y });
-        
         // Update the raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // First check for UI interactions
+        // First check for UI interactions (UI is not in spatial index, so test directly)
         if (this.confirmationUI) {
-            console.log('Checking confirmation UI intersection...');
             const uiAction = this.checkConfirmationUIIntersection(this.mouse);
-            console.log('UI Action result:', uiAction);
             
             if (uiAction) {
-                console.log('UI interaction detected:', uiAction);
                 return uiAction;
             }
         }
         
-        // Then check for hitbox intersections
-        const hitboxIntersects = this.raycaster.intersectObjects(Array.from(this.placementHitboxes.values()));
-        console.log('Hitbox intersections:', hitboxIntersects.length);
+        // Get potential objects using spatial index
+        const potentialObjects = this.spatialIndex.getObjectsAlongRay(this.raycaster.ray, 100);
+        
+        // First check for hitbox intersections in our potential objects
+        const placementHitboxes = Array.from(this.placementHitboxes.values());
+        const potentialHitboxes = potentialObjects.filter(obj => placementHitboxes.includes(obj));
+        let hitboxIntersects = this.raycaster.intersectObjects(potentialHitboxes);
+        
+        // Fallback: if no hitbox intersections were found through spatial index,
+        // check all placement hitboxes directly (in case they were missed)
+        if (hitboxIntersects.length === 0 && placementHitboxes.length > 0) {
+            hitboxIntersects = this.raycaster.intersectObjects(placementHitboxes);
+        }
         
         if (hitboxIntersects.length > 0) {
             const hitbox = hitboxIntersects[0].object;
-            console.log('Hitbox clicked:', hitbox.userData);
             return hitbox.userData.hex;
         }
         
-        // Finally check for hex intersections
-        const hexIntersects = this.raycaster.intersectObjects(this.scene.children, true);
-        console.log('Hex intersections:', hexIntersects.length);
+        // Then check for hex intersections in the potential objects
+        const hexIntersects = this.raycaster.intersectObjects(potentialObjects, true);
         
         if (hexIntersects.length > 0) {
             let object = hexIntersects[0].object;
@@ -1136,12 +1350,10 @@ class Renderer {
                 object = object.parent;
             }
             if (object.userData.hex) {
-                console.log('Hex clicked:', object.userData.hex);
                 return object.userData.hex;
             }
         }
         
-        console.log('No valid intersection found');
         return null;
     }
 
@@ -1508,36 +1720,25 @@ class Renderer {
      * @returns {string|null} 'confirm', 'cancel', or null
      */
     checkConfirmationUIIntersection(point) {
-        if (!this.confirmationUI) {
-            console.log('No confirmation UI present');
+        if (!this.confirmationUI || !this.confirmationUI.children.length) {
             return null;
         }
-        
-        console.log('Checking UI intersections with point:', point);
-        console.log('Available UI elements:', this.confirmationUI.children.map(child => child.userData.type));
         
         this.raycaster.setFromCamera(point, this.camera);
         const intersects = this.raycaster.intersectObjects(this.confirmationUI.children, true);
         
-        console.log('Found UI intersections:', intersects.length);
-        
         if (intersects.length > 0) {
             const hitObject = intersects[0].object;
-            console.log('Hit UI object:', hitObject);
-            console.log('Hit object userData:', hitObject.userData);
             
+            // Find the parent object with a type defined in userData
             let parent = hitObject;
             while (parent && !parent.userData.type) {
-                console.log('Traversing up to parent:', parent);
                 parent = parent.parent;
             }
             
-            const result = parent ? parent.userData.type : null;
-            console.log('Final UI interaction result:', result);
-            return result;
+            return parent ? parent.userData.type : null;
         }
         
-        console.log('No UI intersections found');
         return null;
     }
 
@@ -1572,6 +1773,9 @@ class Renderer {
             hitbox.userData = { type: 'placementHitbox', hex };
             hitbox.visible = true;
             
+            // Add hitbox to spatial index for raycasting
+            this.spatialIndex.addObject(hitbox, position, this.hexSize * 0.8);
+            
             // Store the reference
             this.placementHitboxes.set(hex.hash(), hitbox);
         });
@@ -1581,8 +1785,9 @@ class Renderer {
      * Clear all placement hitboxes
      */
     clearPlacementHitboxes() {
-        // Return all hitboxes to the pool
+        // Remove hitboxes from spatial index and return them to the pool
         this.placementHitboxes.forEach(hitbox => {
+            this.spatialIndex.removeObject(hitbox);
             this.placementHitboxPool.release(hitbox);
         });
         this.placementHitboxes.clear();

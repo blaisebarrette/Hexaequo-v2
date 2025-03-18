@@ -78,16 +78,13 @@ function initGame(modelLoader) {
     // Update the UI
     ui.update();
     
-    // Add the game to the window for debugging
+    // Add the game to the window for use with browser dev tools
     window.hexaequoGame = {
         gameState,
         renderer,
         ui,
         inputHandler
     };
-    
-    // Log initialization complete
-    console.log('Hexaequo game initialized');
 }
 
 /**
@@ -102,7 +99,7 @@ function handleError(error) {
     errorMessage.className = 'error-message';
     errorMessage.textContent = 'An error occurred. Please refresh the page and try again.';
     
-    // Add error details for debugging
+    // Add error details
     const errorDetails = document.createElement('details');
     const errorSummary = document.createElement('summary');
     errorSummary.textContent = 'Error Details';

@@ -97,7 +97,6 @@ class ModelLoader {
             (xhr) => {
                 // Loading progress for individual model
                 const progress = xhr.loaded / xhr.total;
-                console.log(`Loading model ${key}: ${Math.round(progress * 100)}%`);
             },
             (error) => {
                 console.error(`Error loading model ${key}:`, error);

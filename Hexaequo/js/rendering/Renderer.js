@@ -486,18 +486,6 @@ class Renderer {
         this.cullingEnabled = true;
         this.cullingDistance = 30; // Maximum distance to render objects
         
-        // Performance monitoring
-        this.performanceMonitoring = {
-            enabled: false,
-            stats: null,
-            frameTime: 0,
-            frameCount: 0,
-            visibleObjects: 0,
-            totalObjects: 0,
-            lastUpdateTime: 0,
-            updateInterval: 500 // ms
-        };
-
         // Game objects
         this.hexSize = 1.0; // Size of hexagons
         this.hexHeight = 0.2; // Height of hex tiles
@@ -601,9 +589,6 @@ class Renderer {
 
         // Initialize frustum culling
         this.setupFrustumCulling();
-        
-        // Setup performance monitoring
-        this.setupPerformanceMonitoring();
         
         // Start animation loop
         this.animate();
@@ -905,11 +890,6 @@ class Renderer {
     animate() {
         requestAnimationFrame(() => this.animate());
         
-        // Start measuring performance if enabled
-        if (this.performanceMonitoring.enabled && this.performanceMonitoring.stats) {
-            this.performanceMonitoring.stats.begin();
-        }
-        
         // Update controls
         this.controls.update();
 
@@ -928,14 +908,6 @@ class Renderer {
         
         // Render scene
         this.renderer.render(this.scene, this.camera);
-        
-        // Update performance stats if enabled
-        this.updatePerformanceStats();
-        
-        // End performance measurement
-        if (this.performanceMonitoring.enabled && this.performanceMonitoring.stats) {
-            this.performanceMonitoring.stats.end();
-        }
     }
 
     /**
@@ -1053,9 +1025,6 @@ class Renderer {
             // Immediately update culling when turning it on
             this.updateFrustumCulling();
         }
-        
-        // Update performance stats
-        this.updatePerformanceStats();
     }
 
     /**
@@ -2296,90 +2265,6 @@ class Renderer {
                 this.canvas.removeEventListener('mousemove', onMouseMove);
             }
         };
-    }
-
-    /**
-     * Set up performance monitoring
-     */
-    setupPerformanceMonitoring() {
-        // Create stats display if Stats.js is available
-        if (window.Stats) {
-            this.performanceMonitoring.stats = new Stats();
-            this.performanceMonitoring.stats.dom.style.position = 'absolute';
-            this.performanceMonitoring.stats.dom.style.top = '0px';
-            this.performanceMonitoring.stats.dom.style.left = '0px';
-            document.body.appendChild(this.performanceMonitoring.stats.dom);
-            
-            // Create custom panel for culling stats
-            const cullingPanel = new Stats.Panel('Visible/Total', '#0ff', '#002');
-            this.performanceMonitoring.stats.addPanel(cullingPanel);
-            this.performanceMonitoring.cullingPanel = cullingPanel;
-            
-            // Show the FPS panel by default
-            this.performanceMonitoring.stats.showPanel(0);
-            
-            // Enable performance monitoring
-            this.performanceMonitoring.enabled = true;
-        }
-        
-        // Add controls to toggle performance monitoring if dat.GUI is available
-        if (window.dat && window.dat.GUI && this.performanceMonitoring.stats) {
-            const guiContainer = document.getElementById('culling-gui');
-            if (guiContainer) {
-                const gui = guiContainer.querySelector('.dg.main');
-                if (gui && gui.__folders && gui.__folders['Frustum Culling']) {
-                    const folder = gui.__folders['Frustum Culling'];
-                    folder.add(this.performanceMonitoring, 'enabled').name('Show Stats');
-                }
-            }
-        }
-    }
-
-    /**
-     * Update performance monitoring stats
-     */
-    updatePerformanceStats() {
-        if (!this.performanceMonitoring.enabled || !this.performanceMonitoring.stats) {
-            return;
-        }
-        
-        // Update the main stats (FPS)
-        this.performanceMonitoring.stats.update();
-        
-        // Only update detailed stats periodically to avoid performance impact
-        const now = performance.now();
-        if (now - this.performanceMonitoring.lastUpdateTime < this.performanceMonitoring.updateInterval) {
-            return;
-        }
-        this.performanceMonitoring.lastUpdateTime = now;
-        
-        // Count visible objects
-        let visibleObjects = 0;
-        let totalObjects = 0;
-        
-        // Count hex objects
-        for (const [_, obj] of this.hexObjects) {
-            totalObjects++;
-            if (obj.visible) visibleObjects++;
-        }
-        
-        // Count valid move indicators
-        totalObjects += this.validMoveIndicators.length;
-        for (const indicator of this.validMoveIndicators) {
-            if (indicator.visible) visibleObjects++;
-        }
-        
-        // Store counts
-        this.performanceMonitoring.visibleObjects = visibleObjects;
-        this.performanceMonitoring.totalObjects = totalObjects;
-        
-        // Update custom panel if available
-        if (this.performanceMonitoring.cullingPanel) {
-            this.performanceMonitoring.cullingPanel.update(
-                visibleObjects, 
-                totalObjects
-            );
-        }
     }
 }
 
